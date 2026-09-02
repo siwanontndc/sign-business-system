@@ -421,9 +421,7 @@ export default function InvoiceDetailPage() {
                 รอชำระ
               </option>
 
-              <option value="paid">
-                ชำระแล้ว
-              </option>
+              
 
               <option value="cancelled">
                 ยกเลิก
