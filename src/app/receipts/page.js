@@ -38,7 +38,7 @@ export default function ReceiptsPage() {
           contact_name
         )
       `)
-      .eq("status", "paid")
+      .eq("status", "pending")
       .order("created_at", { ascending: false });
   
     if (invoiceError) {
@@ -220,7 +220,7 @@ router.push(`/receipts/${receipt.id}`);
             </h1>
 
             <p style={{ color: "#6b7280" }}>
-              เลือก Invoice ที่ชำระแล้ว
+              เลือก Invoice ที่รอชำระ
             </p>
           </div>
 
@@ -269,7 +269,7 @@ router.push(`/receipts/${receipt.id}`);
               ) : invoices.length === 0 ? (
                 <tr>
                   <td colSpan={5} style={empty}>
-                    ยังไม่มี Invoice ที่ชำระแล้ว
+                    ยังไม่มี Invoice ที่รอชำระ
                   </td>
                 </tr>
               ) : (
@@ -358,3 +358,4 @@ const empty = {
   textAlign: "center",
   color: "#6b7280",
 };
+
