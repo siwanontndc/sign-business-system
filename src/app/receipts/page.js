@@ -180,7 +180,20 @@ export default function ReceiptsPage() {
       }
     }
 
-    router.push(`/receipts/${receipt.id}`);
+    const { error: invoiceUpdateError } = await supabase
+  .from("invoices")
+  .update({
+    status: "paid",
+    updated_at: new Date().toISOString(),
+  })
+  .eq("id", invoice.id);
+
+if (invoiceUpdateError) {
+  alert("สร้างใบเสร็จแล้ว แต่เปลี่ยนสถานะใบแจ้งหนี้ไม่สำเร็จ: " + invoiceUpdateError.message);
+  return;
+}
+
+router.push(`/receipts/${receipt.id}`);
   }
 
   return (
