@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import {
   useEffect,
@@ -128,6 +128,60 @@ export default function DeliveryPage() {
 
     return `${year}-${month}-${day}`;
   }
+  /* ============================================================
+     ENSURE INVOICE ITEMS
+  ============================================================ */
+
+  async function ensureInvoiceItems(invoiceId, quotationId) {
+    if (!invoiceId || !quotationId) return;
+
+    const { data: existingItems, error: existingItemsError } = await supabase
+      .from("invoice_items")
+      .select("id")
+      .eq("invoice_id", invoiceId)
+      .limit(1);
+
+    if (existingItemsError) {
+      throw existingItemsError;
+    }
+
+    if ((existingItems || []).length > 0) {
+      return;
+    }
+
+    const { data: quotationItems, error: quotationItemsError } = await supabase
+      .from("quotation_items")
+      .select("*")
+      .eq("quotation_id", quotationId)
+      .order("created_at", { ascending: true });
+
+    if (quotationItemsError) {
+      throw quotationItemsError;
+    }
+
+    const rows = (quotationItems || []).map((item) => ({
+      invoice_id: invoiceId,
+      description: item.description,
+      width: item.width ?? null,
+      height: item.height ?? null,
+      quantity: Number(item.quantity || 0),
+      unit: item.unit,
+      unit_price: Number(item.unit_price || 0),
+      line_total: Number(item.amount ?? item.line_total ?? 0),
+    }));
+
+    if (rows.length === 0) return;
+
+    const { error: insertItemsError } = await supabase
+      .from("invoice_items")
+      .insert(rows);
+
+    if (insertItemsError) {
+      throw insertItemsError;
+    }
+  }
+
+
 
 
   /* ============================================================
@@ -185,6 +239,7 @@ export default function DeliveryPage() {
 
 
     if (existingInvoice) {
+      await ensureInvoiceItems(existingInvoice.id, quotationId);
       return existingInvoice;
     }
 
@@ -380,9 +435,11 @@ export default function DeliveryPage() {
     }
 
 
+    await ensureInvoiceItems(invoice.id, quotation.id);
+
+
     return invoice;
   }
-
 
   /* ============================================================
      LOAD DELIVERY

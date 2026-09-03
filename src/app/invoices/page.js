@@ -149,7 +149,7 @@ export default function InvoicesPage() {
       quantity: Number(item.quantity || 0),
       unit: item.unit,
       unit_price: Number(item.unit_price || 0),
-      line_total: Number(item.line_total || 0),
+      line_total: Number(item.amount ?? item.line_total ?? 0),
     }));
 
     if (invoiceItems.length > 0) {

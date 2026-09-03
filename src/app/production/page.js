@@ -99,8 +99,11 @@ export default function ProductionPage() {
     const ranks = {
       ready: 1,
       producing: 2,
+      in_progress: 2,
       completed: 3,
       qc: 4,
+      qc_sent: 4,
+      sent_qc: 4,
     };
 
     return ranks[status] || 0;
@@ -216,7 +219,7 @@ export default function ProductionPage() {
   function statusInfo(item) {
     const job = getJob(item);
 
-    if (job?.status === "qc") {
+    if (["qc", "qc_sent", "sent_qc"].includes(job?.status)) {
       return {
         key: "qc",
         label: "ส่ง QC แล้ว",
@@ -234,7 +237,7 @@ export default function ProductionPage() {
       };
     }
 
-    if (job?.status === "producing") {
+    if (["producing", "in_progress"].includes(job?.status)) {
       return {
         key: "producing",
         label: "กำลังผลิต",
@@ -906,3 +909,5 @@ const empty = {
   textAlign: "center",
   color: "#6b7280",
 };
+
+

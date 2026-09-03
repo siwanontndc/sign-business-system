@@ -424,6 +424,9 @@ export default function QCPage() {
           "installation_jobs"
         )
         .insert({
+          qc_job_id:
+            job.qc?.id || null,
+
           quotation_id:
             job.quotation_id,
 
@@ -460,6 +463,9 @@ export default function QCPage() {
             "installation_jobs"
           )
           .insert({
+            qc_job_id:
+              job.qc?.id || null,
+
             quotation_id:
               job.quotation_id,
 
@@ -2058,3 +2064,5 @@ const empty = {
   color:
     "#6b7280",
 };
+
+
