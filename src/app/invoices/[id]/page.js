@@ -411,7 +411,7 @@ export default function InvoiceDetailPage() {
           <div style={toolbarRight}>
             <select
               value={invoice.status || "pending"}
-              disabled={updatingStatus}
+              disabled={updatingStatus || invoice.status === "paid"}
               onChange={(e) =>
                 changeStatus(e.target.value)
               }
@@ -419,6 +419,10 @@ export default function InvoiceDetailPage() {
             >
               <option value="pending">
                 รอชำระ
+              </option>
+
+              <option value="paid">
+                ชำระแล้ว
               </option>
 
               
@@ -458,7 +462,7 @@ export default function InvoiceDetailPage() {
 
               <div>
                 <div style={companyName}>
-                  ธานี แอดเวอร์ไทซิ่ง
+                  ร้าน ธานี แอ็ดเวอร์ไทซิ่ง
                 </div>
 
                 <div style={companyEnglish}>
@@ -466,19 +470,15 @@ export default function InvoiceDetailPage() {
                 </div>
 
                 <div style={companyText}>
-                  1/5 ม.15 ถ.สันโค้งน้อย
-                  ต.รอบเวียง อ.เมือง
-                  จ.เชียงราย 57000
+                  14/15 ม.8 ต.บางกระสั้น อ.บางปะอิน จ.พระนครศรีอยุธยา 13160
                 </div>
 
                 <div style={companyText}>
-                  เลขประจำตัวผู้เสียภาษี:
-                  0575565002465
+                  เลขประจำตัวผู้เสียภาษี: 3149900246546
                 </div>
 
                 <div style={companyText}>
-                  โทร: 093-131-8183,
-                  084-948-7213
+                  โทร: 089-779-7319
                 </div>
 
                 <div style={companyText}>

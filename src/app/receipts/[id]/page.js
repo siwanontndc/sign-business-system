@@ -812,7 +812,7 @@ export default function ReceiptDetailPage() {
                     styles.companyName
                   }
                 >
-                  ธานี แอดเวอร์ไทซิ่ง
+                  ร้าน ธานี แอ็ดเวอร์ไทซิ่ง
                 </div>
 
 
@@ -830,7 +830,7 @@ export default function ReceiptDetailPage() {
                     styles.companyText
                   }
                 >
-                  1/5 ม.15 ถ.สันโค้งน้อย ต.รอบเวียง อ.เมือง จ.เชียงราย 57000
+                  14/15 ม.8 ต.บางกระสั้น อ.บางปะอิน จ.พระนครศรีอยุธยา 13160
                 </div>
 
 
@@ -839,7 +839,7 @@ export default function ReceiptDetailPage() {
                     styles.companyText
                   }
                 >
-                  เลขประจำตัวผู้เสียภาษี: 0575565002465
+                  เลขประจำตัวผู้เสียภาษี: 3149900246546
                 </div>
 
 
@@ -848,7 +848,7 @@ export default function ReceiptDetailPage() {
                     styles.companyText
                   }
                 >
-                  โทร: 093-131-8183, 084-948-7213
+                  โทร: 089-779-7319
                 </div>
 
 
@@ -1307,7 +1307,7 @@ export default function ReceiptDetailPage() {
                 </strong>
 
                 <div>
-                  ขอขอบพระคุณที่ใช้บริการ ธานี แอดเวอร์ไทซิ่ง
+                  ขอขอบพระคุณที่ใช้บริการ ร้าน ธานี แอ็ดเวอร์ไทซิ่ง
                 </div>
               </div>
             </div>

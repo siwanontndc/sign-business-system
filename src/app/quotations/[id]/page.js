@@ -340,7 +340,7 @@ export default function QuotationDetailPage() {
 
               <select
                 value={quotation.status || "draft"}
-                disabled={updatingStatus}
+                disabled={updatingStatus || quotation.status === "approved"}
                 onChange={(e) =>
                   handleStatusChange(e.target.value)
                 }
@@ -356,9 +356,14 @@ export default function QuotationDetailPage() {
 
             <button
               type="button"
-              onClick={() =>
-                router.push(`/quotations/${id}/edit`)
-              }
+              onClick={() => {
+                if (quotation.status === "approved") {
+                  alert("ไม่สามารถแก้ไขใบเสนอราคาที่อนุมัติแล้วได้");
+                  return;
+                }
+
+                router.push(`/quotations/${id}/edit`);
+              }}
               style={styles.editButton}
             >
               แก้ไขใบเสนอราคา
@@ -390,7 +395,7 @@ export default function QuotationDetailPage() {
 
               <div style={styles.companyDetails}>
                 <div style={styles.companyName}>
-                  ธานี แอดเวอร์ไทซิ่ง
+                  ร้าน ธานี แอ็ดเวอร์ไทซิ่ง
                 </div>
 
                 <div style={styles.companyEnglish}>
@@ -398,16 +403,15 @@ export default function QuotationDetailPage() {
                 </div>
 
                 <div style={styles.companyContact}>
-                  1/5 ม.15 ถ.สันโค้งน้อย ต.รอบเวียง
-                  อ.เมือง จ.เชียงราย 57000
+                  14/15 ม.8 ต.บางกระสั้น อ.บางปะอิน จ.พระนครศรีอยุธยา 13160
                 </div>
 
                 <div style={styles.companyContact}>
-                  เลขประจำตัวผู้เสียภาษี: 0575565002465
+                  เลขประจำตัวผู้เสียภาษี: 3149900246546
                 </div>
 
                 <div style={styles.companyContact}>
-                  โทร: 093-131-8183 , 084-948-7213
+                  โทร: 089-779-7319
                 </div>
 
                 <div style={styles.companyContact}>
