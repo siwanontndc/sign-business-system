@@ -104,6 +104,11 @@ export default function HomePage() {
   const [invoices, setInvoices] = useState([]);
   const [receipts, setReceipts] = useState([]);
 
+  const [productionJobs, setProductionJobs] = useState([]);
+  const [qcJobs, setQcJobs] = useState([]);
+  const [installationJobs, setInstallationJobs] = useState([]);
+  const [deliveryJobs, setDeliveryJobs] = useState([]);
+
   const menu =
     role && menuByRole[role]
       ? menuByRole[role]
@@ -395,6 +400,26 @@ export default function HomePage() {
             }
           );
 
+      const productionPromise =
+        supabase
+          .from("production_jobs")
+          .select("id, quotation_id, status, created_at");
+
+      const qcPromise =
+        supabase
+          .from("qc_jobs")
+          .select("id, production_job_id, status, created_at");
+
+      const installationPromise =
+        supabase
+          .from("installation_jobs")
+          .select("id, qc_job_id, quotation_id, status, created_at");
+
+      const deliveryPromise =
+        supabase
+          .from("delivery_jobs")
+          .select("id, installation_job_id, status, created_at");
+
       let invoicePromise =
         Promise.resolve({
           data: [],
@@ -459,11 +484,19 @@ export default function HomePage() {
         quotationResult,
         invoiceResult,
         receiptResult,
+        productionResult,
+        qcResult,
+        installationResult,
+        deliveryResult,
       ] = await Promise.all([
         customerPromise,
         quotationPromise,
         invoicePromise,
         receiptPromise,
+        productionPromise,
+        qcPromise,
+        installationPromise,
+        deliveryPromise,
       ]);
 
       if (
@@ -516,6 +549,22 @@ export default function HomePage() {
 
       setReceipts(
         receiptResult.data || []
+      );
+
+      setProductionJobs(
+        productionResult?.data || []
+      );
+
+      setQcJobs(
+        qcResult?.data || []
+      );
+
+      setInstallationJobs(
+        installationResult?.data || []
+      );
+
+      setDeliveryJobs(
+        deliveryResult?.data || []
       );
     } catch (error) {
       console.error(
@@ -663,16 +712,58 @@ export default function HomePage() {
 
   const activeJobs =
     useMemo(() => {
-      return quotations.filter(
-        (item) =>
-          [
-            "sent",
-            "approved",
-          ].includes(
-            item.status
-          )
-      ).length;
-    }, [quotations]);
+      const productionCount =
+        productionJobs.filter(
+          (item) =>
+            [
+              "ready",
+              "producing",
+              "in_progress",
+              "completed",
+            ].includes(item.status)
+        ).length;
+
+      const qcCount =
+        qcJobs.filter(
+          (item) =>
+            [
+              "pending",
+              "waiting",
+            ].includes(item.status)
+        ).length;
+
+      const installationCount =
+        installationJobs.filter(
+          (item) =>
+            [
+              "waiting",
+              "pending",
+              "scheduled",
+              "installing",
+            ].includes(item.status)
+        ).length;
+
+      const deliveryCount =
+        deliveryJobs.filter(
+          (item) =>
+            [
+              "waiting",
+              "delivered",
+            ].includes(item.status)
+        ).length;
+
+      return (
+        productionCount +
+        qcCount +
+        installationCount +
+        deliveryCount
+      );
+    }, [
+      productionJobs,
+      qcJobs,
+      installationJobs,
+      deliveryJobs,
+    ]);
 
   /* =======================================================
      RECENT ITEMS
@@ -1240,7 +1331,7 @@ top: 0,
                   ? "..."
                   : `${activeJobs} งาน`
               }
-              sub="ใบเสนอราคาที่ส่ง/อนุมัติ"
+              sub="Production + QC + ติดตั้ง + ส่งมอบ"
               color="#2563eb"
             />
 
