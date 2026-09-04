@@ -1,0 +1,13 @@
+{
+  "name": "SIGN BUSINESS",
+  "short_name": "SIGN BUSINESS",
+  "description": "THANEE ADVERTISING Management System",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f3f4f6",
+  "theme_color": "#111827",
+  "icons": [
+    { "src": "/app-icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
