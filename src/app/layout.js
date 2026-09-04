@@ -4,6 +4,7 @@ import AuthGuard from "./AuthGuard";
 import MobileExperience from "./MobileExperience";
 import DesktopWorkflowNav from "./DesktopWorkflowNav";
 import DesktopSidebarMediaLink from "./DesktopSidebarMediaLink";
+import DesktopSidebarKpiLink from "./DesktopSidebarKpiLink";
 import HomeButton from "./HomeButton";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
@@ -33,6 +34,7 @@ export default function RootLayout({ children }) {
         <AuthGuard>
           {children}
           <HomeButton />
+          <DesktopSidebarKpiLink />
           <DesktopSidebarMediaLink />
           <DesktopWorkflowNav />
           <MobileExperience />
