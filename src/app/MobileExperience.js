@@ -5,22 +5,14 @@ import { usePathname, useRouter } from "next/navigation";
 import { supabase } from "./lib/supabase";
 
 const ROLE_NAV = {
-  owner: [
-    ["🏠", "หน้าหลัก", "/"], ["📋", "งาน", "/production"], ["📷", "รูปงาน", "/job-media"], ["🚚", "ส่งมอบ", "/delivery"]
-  ],
-  staff: [
-    ["🏠", "หน้าหลัก", "/"], ["📋", "งาน", "/quotations/list"], ["📷", "รูปงาน", "/job-media"], ["🚚", "ส่งมอบ", "/delivery"]
-  ],
-  production: [
-    ["🏠", "หน้าหลัก", "/"], ["📋", "งาน", "/production"], ["📷", "รูปงาน", "/job-media"], ["🔍", "QC", "/qc"]
-  ],
-  finance: [
-    ["🏠", "หน้าหลัก", "/"], ["🧾", "Invoice", "/invoices/list"], ["💰", "รับเงิน", "/receipts/list"], ["📊", "การเงิน", "/finance"]
-  ],
+  owner: [["🏠", "หน้าหลัก", "/"], ["📋", "งาน", "/production"], ["📷", "รูปงาน", "/job-media"], ["🚚", "ส่งมอบ", "/delivery"]],
+  staff: [["🏠", "หน้าหลัก", "/"], ["📋", "งาน", "/quotations/list"], ["📷", "รูปงาน", "/job-media"], ["🚚", "ส่งมอบ", "/delivery"]],
+  production: [["🏠", "หน้าหลัก", "/"], ["📋", "งาน", "/production"], ["📷", "รูปงาน", "/job-media"], ["🔍", "QC", "/qc"]],
+  finance: [["🏠", "หน้าหลัก", "/"], ["🧾", "Invoice", "/invoices/list"], ["💰", "รับเงิน", "/receipts/list"], ["📊", "การเงิน", "/finance"]],
 };
 
 const MORE = {
-  owner: [["ลูกค้า", "/customers"], ["ใบเสนอราคา", "/quotations/list"], ["ผลิต", "/production"], ["QC", "/qc"], ["ติดตั้ง", "/installation"], ["ส่งแบบ / รูปหน้างาน", "/job-media"], ["Invoices", "/invoices/list"], ["Receipts", "/receipts/list"], ["รายงาน", "/reports"], ["ตั้งค่า", "/settings"]],
+  owner: [["📊 KPI / วิเคราะห์งาน", "/kpi"], ["ลูกค้า", "/customers"], ["ใบเสนอราคา", "/quotations/list"], ["ผลิต", "/production"], ["QC", "/qc"], ["ติดตั้ง", "/installation"], ["ส่งแบบ / รูปหน้างาน", "/job-media"], ["Invoices", "/invoices/list"], ["Receipts", "/receipts/list"], ["รายงาน", "/reports"], ["ตั้งค่า", "/settings"]],
   staff: [["ลูกค้า", "/customers"], ["ใบเสนอราคา", "/quotations/list"], ["ผลิต", "/production"], ["QC", "/qc"], ["ติดตั้ง", "/installation"], ["ส่งแบบ / รูปหน้างาน", "/job-media"]],
   production: [["ผลิต", "/production"], ["QC", "/qc"], ["ติดตั้ง", "/installation"], ["ส่งแบบ / รูปหน้างาน", "/job-media"], ["ส่งมอบ", "/delivery"]],
   finance: [["Invoices", "/invoices/list"], ["Receipts", "/receipts/list"], ["การเงิน", "/finance"], ["รายงาน", "/reports"]],
@@ -34,7 +26,6 @@ export default function MobileExperience() {
   const [installPrompt, setInstallPrompt] = useState(null);
   const [showInstall, setShowInstall] = useState(false);
   const [isIOS, setIsIOS] = useState(false);
-
   const hidden = pathname === "/login" || pathname.startsWith("/login/");
 
   useEffect(() => {
@@ -100,11 +91,10 @@ export default function MobileExperience() {
     <>
       {showInstall && (
         <div className="pwa-install no-print">
-          <div><strong>ติดตั้ง SIGN BUSINESS</strong><br/><span>{isIOS ? "บน iPhone/iPad: เปิดด้วย Safari → แชร์ → เพิ่มไปยังหน้าจอโฮม" : "ติดตั้งเป็นแอปบนอุปกรณ์นี้เพื่อเปิดใช้งานได้สะดวก"}</span></div>
+          <div><strong>ติดตั้ง SIGN BUSINESS</strong><br/><span>{isIOS ? "บน iPhone/iPad: Safari → แชร์ → เพิ่มไปยังหน้าจอโฮม" : "ติดตั้งเป็นแอปบนอุปกรณ์นี้เพื่อเปิดใช้งานได้สะดวก"}</span></div>
           <div className="pwa-install-actions">{installPrompt && <button onClick={install}>ติดตั้งแอป</button>}<button className="pwa-dismiss" onClick={dismissInstall}>ปิด</button></div>
         </div>
       )}
-
       {more && role && (
         <div className="mobile-more-backdrop no-print" onClick={() => setMore(false)}>
           <div className="mobile-more-sheet" onClick={(e) => e.stopPropagation()}>
@@ -114,7 +104,6 @@ export default function MobileExperience() {
           </div>
         </div>
       )}
-
       {role && (
         <nav className="mobile-bottom-nav no-print" aria-label="เมนูมือถือ">
           {nav.map(([icon, label, href]) => {
