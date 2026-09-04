@@ -1,39 +1,6 @@
 "use client";
-
-import { useEffect, useState } from "react";
-import { usePathname } from "next/navigation";
-import { supabase } from "./lib/supabase";
-
-const ACCESS_RULES = [
-  { path: "/customers", roles: ["owner", "staff"] },
-  { path: "/quotations", roles: ["owner", "staff"] },
-  { path: "/invoices", roles: ["owner", "finance"] },
-  { path: "/receipts", roles: ["owner", "finance"] },
-  { path: "/finance", roles: ["owner", "finance"] },
-  { path: "/reports", roles: ["owner", "finance"] },
-  { path: "/kpi", roles: ["owner"] },
-  { path: "/employees", roles: ["owner"] },
-  { path: "/settings", roles: ["owner"] },
-  { path: "/production", roles: ["owner", "staff", "production"] },
-  { path: "/qc", roles: ["owner", "staff", "production"] },
-  { path: "/installation", roles: ["owner", "staff", "production"] },
-  { path: "/job-media", roles: ["owner", "staff", "production"] },
-  { path: "/delivery", roles: ["owner", "staff", "production"] },
-];
-const VALID_ROLES = ["owner", "staff", "finance", "production"];
-export default function AuthGuard({ children }) {
-  const pathname = usePathname(); const [checking,setChecking]=useState(true); const [message,setMessage]=useState("");
-  useEffect(()=>{let active=true; async function checkAccess(){try{
-    if(pathname==="/login"||pathname.startsWith("/login/")){if(active)setChecking(false);return}
-    if(active){setChecking(true);setMessage("")}
-    const {data:{user},error:userError}=await supabase.auth.getUser(); if(userError||!user){window.location.replace("/login");return}
-    let currentRole=null; const {data:rpcRole,error:rpcError}=await supabase.rpc("current_user_role"); if(!rpcError&&rpcRole){const n=String(rpcRole).trim().toLowerCase();if(VALID_ROLES.includes(n))currentRole=n}
-    if(!currentRole){const {data:profile}=await supabase.from("profiles").select("role,is_active").eq("id",user.id).maybeSingle(); if(profile?.is_active===false){await supabase.auth.signOut();window.location.replace("/login");return} if(profile?.role){const n=String(profile.role).trim().toLowerCase();if(VALID_ROLES.includes(n))currentRole=n}}
-    if(!currentRole){if(active){setMessage("ไม่พบสิทธิ์ของบัญชีนี้");setChecking(false)}return}
-    const matched=ACCESS_RULES.find(r=>pathname===r.path||pathname.startsWith(`${r.path}/`)); if(pathname==="/"){if(active)setChecking(false);return} if(matched&&!matched.roles.includes(currentRole)){window.location.replace("/");return} if(!matched&&currentRole!=="owner"){window.location.replace("/");return} if(active)setChecking(false)
-  }catch(error){console.error(error);if(active){setMessage("ตรวจสอบสิทธิ์ไม่สำเร็จ");setChecking(false)}}} checkAccess();return()=>{active=false}},[pathname]);
-  if(pathname==="/login"||pathname.startsWith("/login/"))return children;
-  if(checking)return <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#f3f4f6"}}>กำลังตรวจสอบสิทธิ์...</div>;
-  if(message)return <div style={{minHeight:"100vh",display:"grid",placeItems:"center"}}><div><h2>ไม่สามารถเข้าใช้งานได้</h2><p>{message}</p></div></div>;
-  return children;
-}
+import { useEffect,useState } from "react"; import { usePathname } from "next/navigation"; import { supabase } from "./lib/supabase";
+const ACCESS_RULES=[
+{path:"/customers",roles:["owner","manager","staff"]},{path:"/quotations",roles:["owner","manager","staff"]},{path:"/invoices",roles:["owner","manager","finance"]},{path:"/receipts",roles:["owner","manager","finance"]},{path:"/finance",roles:["owner","manager","finance"]},{path:"/reports",roles:["owner","manager","finance"]},{path:"/kpi",roles:["owner"]},{path:"/employees",roles:["owner"]},{path:"/settings",roles:["owner","manager"]},{path:"/production",roles:["owner","manager","staff","production"]},{path:"/qc",roles:["owner","manager","staff","production"]},{path:"/installation",roles:["owner","manager","staff","production"]},{path:"/job-media",roles:["owner","manager","staff","production"]},{path:"/delivery",roles:["owner","manager","staff","production"]}];
+const VALID_ROLES=["owner","manager","staff","finance","production"];
+export default function AuthGuard({children}){const pathname=usePathname();const[checking,setChecking]=useState(true),[message,setMessage]=useState("");useEffect(()=>{let active=true;(async()=>{try{if(pathname==="/login"||pathname.startsWith("/login/")){if(active)setChecking(false);return}if(active){setChecking(true);setMessage("")}const{data:{user},error}=await supabase.auth.getUser();if(error||!user){window.location.replace("/login");return}let role=null;const rpc=await supabase.rpc("current_user_role");if(!rpc.error&&rpc.data){const n=String(rpc.data).trim().toLowerCase();if(VALID_ROLES.includes(n))role=n}if(!role){const p=await supabase.from("profiles").select("role,is_active").eq("id",user.id).maybeSingle();if(p.data?.is_active===false){await supabase.auth.signOut();window.location.replace("/login");return}const n=p.data?.role?String(p.data.role).trim().toLowerCase():null;if(n&&VALID_ROLES.includes(n))role=n}if(!role){if(active){setMessage("ไม่พบสิทธิ์ของบัญชีนี้");setChecking(false)}return}if(pathname==="/"){if(active)setChecking(false);return}const matched=ACCESS_RULES.find(r=>pathname===r.path||pathname.startsWith(`${r.path}/`));if(matched&&!matched.roles.includes(role)){window.location.replace("/");return}if(!matched&&!['owner','manager'].includes(role)){window.location.replace("/");return}if(active)setChecking(false)}catch(e){console.error(e);if(active){setMessage("ตรวจสอบสิทธิ์ไม่สำเร็จ");setChecking(false)}}})();return()=>{active=false}},[pathname]);if(pathname==="/login"||pathname.startsWith("/login/"))return children;if(checking)return <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#f3f4f6"}}>กำลังตรวจสอบสิทธิ์...</div>;if(message)return <div style={{minHeight:"100vh",display:"grid",placeItems:"center"}}><div><h2>ไม่สามารถเข้าใช้งานได้</h2><p>{message}</p></div></div>;return children}
