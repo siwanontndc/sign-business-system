@@ -6,13 +6,13 @@ import { supabase } from "./lib/supabase";
 
 const ROLE_NAV = {
   owner: [
-    ["🏠", "หน้าหลัก", "/"], ["📋", "งาน", "/production"], ["🔍", "QC", "/qc"], ["🚚", "ส่งมอบ", "/delivery"]
+    ["🏠", "หน้าหลัก", "/"], ["📋", "งาน", "/production"], ["📷", "รูปงาน", "/job-media"], ["🚚", "ส่งมอบ", "/delivery"]
   ],
   staff: [
-    ["🏠", "หน้าหลัก", "/"], ["📋", "งาน", "/quotations/list"], ["🔍", "QC", "/qc"], ["🚚", "ส่งมอบ", "/delivery"]
+    ["🏠", "หน้าหลัก", "/"], ["📋", "งาน", "/quotations/list"], ["📷", "รูปงาน", "/job-media"], ["🚚", "ส่งมอบ", "/delivery"]
   ],
   production: [
-    ["🏠", "หน้าหลัก", "/"], ["📋", "งาน", "/production"], ["🔍", "QC", "/qc"], ["🚚", "ส่งมอบ", "/delivery"]
+    ["🏠", "หน้าหลัก", "/"], ["📋", "งาน", "/production"], ["📷", "รูปงาน", "/job-media"], ["🔍", "QC", "/qc"]
   ],
   finance: [
     ["🏠", "หน้าหลัก", "/"], ["🧾", "Invoice", "/invoices/list"], ["💰", "รับเงิน", "/receipts/list"], ["📊", "การเงิน", "/finance"]
@@ -20,9 +20,9 @@ const ROLE_NAV = {
 };
 
 const MORE = {
-  owner: [["ลูกค้า", "/customers"], ["ใบเสนอราคา", "/quotations/list"], ["ติดตั้ง", "/installation"], ["Invoices", "/invoices/list"], ["Receipts", "/receipts/list"], ["รายงาน", "/reports"], ["ตั้งค่า", "/settings"]],
-  staff: [["ลูกค้า", "/customers"], ["ใบเสนอราคา", "/quotations/list"], ["ผลิต", "/production"], ["ติดตั้ง", "/installation"]],
-  production: [["ผลิต", "/production"], ["ติดตั้ง", "/installation"], ["ส่งมอบ", "/delivery"]],
+  owner: [["ลูกค้า", "/customers"], ["ใบเสนอราคา", "/quotations/list"], ["ผลิต", "/production"], ["QC", "/qc"], ["ติดตั้ง", "/installation"], ["ส่งแบบ / รูปหน้างาน", "/job-media"], ["Invoices", "/invoices/list"], ["Receipts", "/receipts/list"], ["รายงาน", "/reports"], ["ตั้งค่า", "/settings"]],
+  staff: [["ลูกค้า", "/customers"], ["ใบเสนอราคา", "/quotations/list"], ["ผลิต", "/production"], ["QC", "/qc"], ["ติดตั้ง", "/installation"], ["ส่งแบบ / รูปหน้างาน", "/job-media"]],
+  production: [["ผลิต", "/production"], ["QC", "/qc"], ["ติดตั้ง", "/installation"], ["ส่งแบบ / รูปหน้างาน", "/job-media"], ["ส่งมอบ", "/delivery"]],
   finance: [["Invoices", "/invoices/list"], ["Receipts", "/receipts/list"], ["การเงิน", "/finance"], ["รายงาน", "/reports"]],
 };
 
