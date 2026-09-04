@@ -3,6 +3,7 @@ import "./globals.css";
 import AuthGuard from "./AuthGuard";
 import MobileExperience from "./MobileExperience";
 import DesktopWorkflowNav from "./DesktopWorkflowNav";
+import DesktopSidebarMediaLink from "./DesktopSidebarMediaLink";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
@@ -30,6 +31,7 @@ export default function RootLayout({ children }) {
       <body className={`${geistSans.variable} ${geistMono.variable}`}>
         <AuthGuard>
           {children}
+          <DesktopSidebarMediaLink />
           <DesktopWorkflowNav />
           <MobileExperience />
         </AuthGuard>
