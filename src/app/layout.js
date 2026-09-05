@@ -15,7 +15,11 @@ export const metadata = {
   title: "SIGN BUSINESS Management System",
   description: "THANEE ADVERTISING Management System",
   manifest: "/manifest.webmanifest",
-  icons: { icon: "/app-icon.svg", apple: "/logo.png" },
+  icons: {
+    icon: "/app-icon-v3.svg",
+    shortcut: "/app-icon-v3.svg",
+    apple: "/apple-touch-icon-v3.svg",
+  },
   appleWebApp: { capable: true, statusBarStyle: "default", title: "SIGN BUSINESS" },
   formatDetection: { telephone: false },
 };
