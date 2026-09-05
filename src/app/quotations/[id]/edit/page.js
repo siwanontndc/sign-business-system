@@ -4,889 +4,166 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "../../../lib/supabase";
 
-const inputStyle = {
-  width: "100%",
-  padding: "11px 12px",
-  border: "1px solid #d1d5db",
-  borderRadius: "8px",
-  background: "white",
-  color: "#111827",
-  boxSizing: "border-box",
-};
+const FALLBACK_CATALOG = [
+  { product_key:"vinyl", name:"ไวนิล", calculation:"sqm", unit:"ตร.ม.", unit_price:150, sort_order:10 },
+  { product_key:"translucent_vinyl", name:"ไวนิลโปร่งแสง", calculation:"sqm", unit:"ตร.ม.", unit_price:450, sort_order:20 },
+  { product_key:"vinyl_wholesale", name:"ไวนิลพิมพ์ปกติ (ขายร้านส่ง)", calculation:"sqm", unit:"ตร.ม.", unit_price:100, sort_order:30 },
+  { product_key:"uv_vinyl_wholesale", name:"ไวนิลพิมพ์ UV (ขายร้านส่ง)", calculation:"sqm", unit:"ตร.ม.", unit_price:250, sort_order:40 },
+  { product_key:"uv_vinyl_retail", name:"ไวนิลพิมพ์ UV (ขายหน้าร้าน)", calculation:"sqm", unit:"ตร.ม.", unit_price:450, sort_order:50 },
+  { product_key:"uv_sticker", name:"สติกเกอร์พิมพ์ UV", calculation:"sqm", unit:"ตร.ม.", unit_price:650, sort_order:60 },
+  { product_key:"uv_diecut_label", name:"ฉลากสินค้าไดคัทพิมพ์ UV", calculation:"sqm", unit:"ตร.ม.", unit_price:750, sort_order:70 },
+  { product_key:"composite_deco_dezign", name:"อลูมิเนียมคอมโพสิต DECO/DEZIGN", calculation:"sqm", unit:"ตร.ม.", unit_price:2500, sort_order:80 },
+  { product_key:"composite_altex_pink_rino", name:"อลูมิเนียมคอมโพสิต Altex/Pink Rino", calculation:"sqm", unit:"ตร.ม.", unit_price:3000, sort_order:90 },
+  { product_key:"a3_diecut_sticker", name:"สติกเกอร์ไดคัท A3", calculation:"sheet_tier", unit:"แผ่น", unit_price:80, tier_min_qty:10, tier_unit_price:60, sort_order:100 },
+  { product_key:"lightbox", name:"ตู้ไฟสี่เหลี่ยม", calculation:"sqm", unit:"ตร.ม.", unit_price:7500, sort_order:110 },
+  { product_key:"paswood10", name:"อักษรพาสวู๊ด 10 มม.", calculation:"height_inch", unit:"นิ้ว", unit_price:15, sort_order:120 },
+  { product_key:"zinc_frontlight", name:"อักษรซิ้งค์ไฟออกหน้า", calculation:"height_inch", unit:"นิ้ว", unit_price:150, sort_order:130 },
+];
+const CUSTOM_PRODUCT = { product_key:"custom", name:"กำหนดเอง", calculation:"normal", unit:"งาน", unit_price:0 };
 
-const primaryButton = {
-  padding: "11px 18px",
-  border: "none",
-  borderRadius: "8px",
-  background: "#2563eb",
-  color: "white",
-  fontWeight: "600",
-  cursor: "pointer",
-};
+const inputStyle = { width:"100%", padding:"10px 11px", border:"1px solid #d1d5db", borderRadius:8, background:"white", color:"#111827", boxSizing:"border-box" };
+const primaryButton = { padding:"11px 16px", border:0, borderRadius:8, background:"#2563eb", color:"white", fontWeight:700, cursor:"pointer" };
+const secondaryButton = { padding:"11px 16px", border:"1px solid #d1d5db", borderRadius:8, background:"white", color:"#111827", fontWeight:700, cursor:"pointer" };
 
-const secondaryButton = {
-  padding: "11px 18px",
-  border: "1px solid #d1d5db",
-  borderRadius: "8px",
-  background: "white",
-  color: "#374151",
-  fontWeight: "600",
-  cursor: "pointer",
-};
-
-function createItem(data = {}) {
-  return {
-    clientId: `${Date.now()}-${Math.random()}`,
-    description: data.description || "",
-    width: data.width ?? "",
-    height: data.height ?? "",
-    quantity: data.quantity ?? 1,
-    unit: data.unit || "ตร.ม.",
-    unit_price: data.unit_price ?? 0,
-  };
+function parseCmSize(text) {
+  const raw = String(text || "").trim().toLowerCase().replace(/ซม\.?/g,"").replace(/cm/g,"").replace(/×|\*/g,"x").replace(/\s+/g,"");
+  const m = raw.match(/^(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)$/);
+  if (!m) return null;
+  const width = Number(m[1]), height = Number(m[2]);
+  return width > 0 && height > 0 ? { width, height } : null;
 }
-
-function calculateArea(item) {
-  const widthCm = Number(item.width || 0);
-  const heightCm = Number(item.height || 0);
-
-  if (widthCm <= 0 || heightCm <= 0) {
-    return 0;
-  }
-
-  return (widthCm / 100) * (heightCm / 100);
+function parseHeightInch(text) {
+  const v = Number(String(text || "").replace(/นิ้ว|"/g,"").trim());
+  return Number.isFinite(v) && v > 0 ? v : 0;
 }
+function money(v){ return new Intl.NumberFormat("th-TH",{minimumFractionDigits:2,maximumFractionDigits:2}).format(Number(v||0)); }
+function toDateInputValue(v){ return v ? String(v).slice(0,10) : ""; }
 
-function calculateLineTotal(item) {
-  const quantity = Number(item.quantity || 0);
-  const unitPrice = Number(item.unit_price || 0);
-
-  if (item.unit === "ตร.ม.") {
-    const area = calculateArea(item);
-    return area * quantity * unitPrice;
-  }
-
-  return quantity * unitPrice;
-}
-
-function toDateInputValue(value) {
-  if (!value) return "";
-
-  return String(value).slice(0, 10);
-}
-
-export default function EditQuotationPage() {
+export default function EditQuotationPage(){
   const params = useParams();
   const router = useRouter();
   const id = params.id;
+  const [loading,setLoading]=useState(true);
+  const [saving,setSaving]=useState(false);
+  const [catalog,setCatalog]=useState(FALLBACK_CATALOG);
+  const [customers,setCustomers]=useState([]);
+  const [quotation,setQuotation]=useState({quotation_no:"",customer_id:"",project_name:"",quotation_date:"",valid_days:30,discount:0,vat_percent:0,note:"",status:"draft"});
+  const [items,setItems]=useState([]);
 
-  const [customers, setCustomers] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [notFound, setNotFound] = useState(false);
+  useEffect(()=>{ if(id) loadPage(); },[id]);
 
-  const [quotation, setQuotation] = useState({
-    quotation_no: "",
-    customer_id: "",
-    project_name: "",
-    quotation_date: "",
-    valid_days: 30,
-    discount: 0,
-    vat_percent: 7,
-    note: "",
-    status: "draft",
-  });
-
-  const [items, setItems] = useState([createItem()]);
-
-  useEffect(() => {
-    async function loadPage() {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-
-      if (!session) {
-        router.push("/login");
-        return;
-      }
-
-      const [quotationResult, itemsResult, customersResult] =
-        await Promise.all([
-          supabase.from("quotations").select("*").eq("id", id).single(),
-          supabase
-            .from("quotation_items")
-            .select("*")
-            .eq("quotation_id", id)
-            .order("created_at", { ascending: true }),
-          supabase
-            .from("customers")
-            .select("id, customer_code, company_name, contact_name")
-            .order("created_at", { ascending: false }),
-        ]);
-
-      if (quotationResult.error) {
-        console.error(quotationResult.error);
-        alert("โหลดใบเสนอราคาไม่สำเร็จ: " + quotationResult.error.message);
-        setNotFound(true);
-        setLoading(false);
-        return;
-      }
-
-      if (itemsResult.error) {
-        console.error(itemsResult.error);
-        alert("โหลดรายการงานไม่สำเร็จ: " + itemsResult.error.message);
-        setLoading(false);
-        return;
-      }
-
-      if (customersResult.error) {
-        console.error(customersResult.error);
-        alert("โหลดข้อมูลลูกค้าไม่สำเร็จ: " + customersResult.error.message);
-      } else {
-        setCustomers(customersResult.data || []);
-      }
-
-      const quotationData = quotationResult.data;
-
-      setQuotation({
-        quotation_no: quotationData.quotation_no || "",
-        customer_id: quotationData.customer_id || "",
-        project_name: quotationData.project_name || "",
-        quotation_date: toDateInputValue(quotationData.quotation_date),
-        valid_days: quotationData.valid_days ?? 30,
-        discount: quotationData.discount ?? 0,
-        vat_percent: quotationData.vat_percent ?? 7,
-        note: quotationData.note || "",
-        status: quotationData.status || "draft",
-      });
-
-      const loadedItems = itemsResult.data || [];
-
-      setItems(
-        loadedItems.length > 0
-          ? loadedItems.map((item) => createItem(item))
-          : [createItem()]
-      );
-
-      setLoading(false);
-    }
-
-    if (id) {
-      loadPage();
-    }
-  }, [id, router]);
-
-  function addItem() {
-    setItems((prev) => [...prev, createItem()]);
+  function products(){ return [...catalog,CUSTOM_PRODUCT]; }
+  function getProduct(key){ return products().find(p=>p.product_key===key)||CUSTOM_PRODUCT; }
+  function findProductForExisting(row, list){
+    const byName = list.find(p=>p.name===row.description);
+    if(byName) return byName;
+    const unit = String(row.unit||"");
+    if(unit==="นิ้ว") return list.find(p=>p.calculation==="height_inch")||CUSTOM_PRODUCT;
+    return CUSTOM_PRODUCT;
+  }
+  function makeItem(product = catalog[0]||FALLBACK_CATALOG[0], row={}){
+    const size = row.size || ((row.width||row.height) ? `${row.width||""} x ${row.height||""}` : "");
+    return { clientId:`${Date.now()}-${Math.random()}`, product_key:product.product_key, description:row.description||product.name, size, quantity:Number(row.quantity??1), unit:row.unit||product.unit, unit_price:Number(row.unit_price??product.unit_price??0), amount:Number(row.amount??row.line_total??0) };
   }
 
-  function updateItem(clientId, field, value) {
-    setItems((prev) =>
-      prev.map((item) =>
-        item.clientId === clientId
-          ? {
-              ...item,
-              [field]:
-                field === "quantity" || field === "unit_price"
-                  ? Number(value)
-                  : value,
-            }
-          : item
-      )
-    );
+  async function loadPage(){
+    setLoading(true);
+    const {data:{session}}=await supabase.auth.getSession();
+    if(!session){ router.replace("/login"); return; }
+    const [qRes,iRes,cRes,pRes]=await Promise.all([
+      supabase.from("quotations").select("*").eq("id",id).single(),
+      supabase.from("quotation_items").select("*").eq("quotation_id",id).order("created_at",{ascending:true}),
+      supabase.from("customers").select("id,customer_code,company_name,contact_name").order("created_at",{ascending:false}),
+      supabase.from("product_catalog").select("product_key,name,calculation,unit,unit_price,tier_min_qty,tier_unit_price,is_active,sort_order").eq("is_active",true).order("sort_order").order("name")
+    ]);
+    if(qRes.error){ alert("โหลดใบเสนอราคาไม่สำเร็จ: "+qRes.error.message); router.replace("/quotations/list"); return; }
+    const active = !pRes.error && pRes.data?.length ? pRes.data : FALLBACK_CATALOG;
+    setCatalog(active); setCustomers(cRes.error?[]:(cRes.data||[]));
+    const q=qRes.data;
+    setQuotation({quotation_no:q.quotation_no||"",customer_id:q.customer_id||"",project_name:q.project_name||"",quotation_date:toDateInputValue(q.quotation_date),valid_days:q.valid_days??30,discount:q.discount??0,vat_percent:q.vat_percent??0,note:q.note||"",status:q.status||"draft"});
+    const rows=iRes.error?[]:(iRes.data||[]);
+    setItems(rows.length?rows.map(r=>makeItem(findProductForExisting(r,active),r)):[makeItem(active[0])]);
+    setLoading(false);
   }
 
-  function removeItem(clientId) {
-    if (items.length === 1) {
-      alert("ใบเสนอราคาต้องมีอย่างน้อย 1 รายการ");
-      return;
-    }
-
-    setItems((prev) => prev.filter((item) => item.clientId !== clientId));
+  function effectivePrice(item,p){
+    const qty=Number(item.quantity||0);
+    if(p.calculation==="sheet_tier" && Number(p.tier_min_qty)>0 && qty>=Number(p.tier_min_qty)) return Number(p.tier_unit_price||p.unit_price||0);
+    return Number(item.unit_price||p.unit_price||0);
   }
-
-  const subtotal = useMemo(() => {
-    return items.reduce((sum, item) => sum + calculateLineTotal(item), 0);
-  }, [items]);
-
-  const discount = Number(quotation.discount || 0);
-  const afterDiscount = Math.max(subtotal - discount, 0);
-  const vatAmount =
-    afterDiscount * (Number(quotation.vat_percent || 0) / 100);
-  const grandTotal = afterDiscount + vatAmount;
-
-  function formatMoney(value) {
-    return new Intl.NumberFormat("th-TH", {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(Number(value || 0));
+  function calc(item){
+    const p=getProduct(item.product_key), qty=Number(item.quantity||0), price=effectivePrice(item,p);
+    if(p.calculation==="sqm"){
+      const s=parseCmSize(item.size); if(!s) return {amount:0,price,text:"กรอกขนาด เช่น 200 x 100 ซม."};
+      const area=s.width*s.height/10000; return {amount:area*qty*price,price,text:`${area.toFixed(2)} ตร.ม. × ${qty} × ฿${money(price)}`,width:s.width,height:s.height};
+    }
+    if(p.calculation==="height_inch"){
+      const h=parseHeightInch(item.size); if(!h) return {amount:0,price,text:"กรอกความสูง เช่น 20 นิ้ว"};
+      return {amount:h*qty*price,price,text:`${h} นิ้ว × ${qty} × ฿${money(price)}`};
+    }
+    if(p.calculation==="sheet_tier"){
+      const min=Number(p.tier_min_qty||0); return {amount:qty*price,price,text:min&&qty>=min?`${qty} แผ่น × ฿${money(price)} (ราคา ${min} แผ่นขึ้นไป)`:`${qty} แผ่น × ฿${money(price)}`};
+    }
+    return {amount:qty*price,price,text:`${qty} × ฿${money(price)}`};
   }
-
-  function formatArea(value) {
-    return new Intl.NumberFormat("th-TH", {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(Number(value || 0));
+  function recalc(item){ const r=calc(item); return {...item,unit_price:r.price,amount:Number(r.amount||0)}; }
+  function changeProduct(clientId,key){
+    const p=getProduct(key);
+    setItems(old=>old.map(i=>i.clientId===clientId?recalc({...i,product_key:key,description:key==="custom"?"":p.name,size:"",quantity:1,unit:p.unit,unit_price:Number(p.unit_price||0)}):i));
   }
+  function updateItem(clientId,field,value){ setItems(old=>old.map(i=>i.clientId===clientId?recalc({...i,[field]:value}):i)); }
+  function addItem(){ setItems(old=>[...old,makeItem(catalog[0]||FALLBACK_CATALOG[0])]); }
+  function removeItem(clientId){ if(items.length===1)return alert("ใบเสนอราคาต้องมีอย่างน้อย 1 รายการ"); setItems(old=>old.filter(i=>i.clientId!==clientId)); }
 
-  async function handleSave() {
-    if (saving) return;
+  const subtotal=useMemo(()=>items.reduce((s,i)=>s+Number(calc(i).amount||0),0),[items,catalog]);
+  const discount=Number(quotation.discount||0), afterDiscount=Math.max(subtotal-discount,0), vatAmount=afterDiscount*(Number(quotation.vat_percent||0)/100), grandTotal=afterDiscount+vatAmount;
 
-    if (!quotation.customer_id) {
-      alert("กรุณาเลือกลูกค้า");
-      return;
+  async function handleSave(){
+    if(saving)return;
+    if(!quotation.customer_id)return alert("กรุณาเลือกลูกค้า");
+    if(!quotation.project_name.trim())return alert("กรุณากรอกชื่อโครงการ / ชื่องาน");
+    for(let n=0;n<items.length;n++){
+      const i=items[n],p=getProduct(i.product_key);
+      if(!i.description.trim()||Number(i.quantity)<=0)return alert(`รายการที่ ${n+1}: กรุณากรอกรายการและจำนวนให้ครบ`);
+      if(p.calculation==="sqm"&&!parseCmSize(i.size))return alert(`รายการที่ ${n+1}: กรุณากรอกขนาด เช่น 200 x 100`);
+      if(p.calculation==="height_inch"&&!parseHeightInch(i.size))return alert(`รายการที่ ${n+1}: กรุณากรอกความสูง เช่น 20 นิ้ว`);
     }
-
-    if (!quotation.project_name.trim()) {
-      alert("กรุณากรอกชื่อโครงการ / ชื่องาน");
-      return;
-    }
-
-    const invalidItem = items.some(
-      (item) => !item.description.trim() || Number(item.quantity) <= 0
-    );
-
-    if (invalidItem) {
-      alert("กรุณากรอกรายการงานและจำนวนให้ครบ");
-      return;
-    }
-
     setSaving(true);
-
-    try {
-      const { error: quotationError } = await supabase
-        .from("quotations")
-        .update({
-          customer_id: quotation.customer_id,
-          project_name: quotation.project_name,
-          quotation_date: quotation.quotation_date,
-          valid_days: Number(quotation.valid_days || 30),
-          subtotal,
-          discount,
-          vat_percent: Number(quotation.vat_percent || 0),
-          vat_amount: vatAmount,
-          grand_total: grandTotal,
-          note: quotation.note || "",
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", id);
-
-      if (quotationError) {
-        throw quotationError;
-      }
-
-      const { error: deleteError } = await supabase
-        .from("quotation_items")
-        .delete()
-        .eq("quotation_id", id);
-
-      if (deleteError) {
-        throw deleteError;
-      }
-
-      const itemRows = items.map((item) => ({
-        quotation_id: id,
-        description: item.description,
-        width: item.width || null,
-        height: item.height || null,
-        quantity: Number(item.quantity || 0),
-        unit: item.unit,
-        unit_price: Number(item.unit_price || 0),
-        line_total: calculateLineTotal(item),
-      }));
-
-      const { error: itemsError } = await supabase
-        .from("quotation_items")
-        .insert(itemRows);
-
-      if (itemsError) {
-        throw itemsError;
-      }
-
+    try{
+      const {error:qErr}=await supabase.from("quotations").update({customer_id:quotation.customer_id,project_name:quotation.project_name.trim(),quotation_date:quotation.quotation_date,valid_days:Number(quotation.valid_days||30),subtotal,discount,vat_percent:Number(quotation.vat_percent||0),vat_amount:vatAmount,grand_total:grandTotal,note:quotation.note||"",updated_at:new Date().toISOString()}).eq("id",id);
+      if(qErr)throw qErr;
+      const {error:dErr}=await supabase.from("quotation_items").delete().eq("quotation_id",id); if(dErr)throw dErr;
+      const rows=items.map((i,index)=>{ const r=calc(i); const s=parseCmSize(i.size); return {quotation_id:id,description:i.description.trim(),size:i.size.trim()||null,width:s?.width||null,height:s?.height||null,quantity:Number(i.quantity||0),unit:i.unit||"งาน",unit_price:Number(r.price||0),amount:Number(r.amount||0),line_total:Number(r.amount||0),sort_order:index+1}; });
+      const {error:iErr}=await supabase.from("quotation_items").insert(rows); if(iErr)throw iErr;
       router.push(`/quotations/${id}`);
-    } catch (error) {
-      console.error(error);
-      alert(
-        "บันทึกการแก้ไขไม่สำเร็จ: " + (error?.message || "เกิดข้อผิดพลาด")
-      );
-    } finally {
-      setSaving(false);
-    }
+    }catch(e){ alert("บันทึกการแก้ไขไม่สำเร็จ: "+(e?.message||"เกิดข้อผิดพลาด")); }
+    finally{ setSaving(false); }
   }
 
-  if (loading) {
-    return (
-      <main
-        style={{
-          minHeight: "100vh",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          background: "#f3f4f6",
-        }}
-      >
-        กำลังโหลด...
-      </main>
-    );
-  }
+  if(loading)return <main style={{padding:32}}>กำลังโหลด...</main>;
+  const th={padding:10,background:"#f9fafb",fontSize:12,textAlign:"left",whiteSpace:"nowrap"};
+  const td={padding:8,borderTop:"1px solid #e5e7eb",verticalAlign:"top"};
 
-  if (notFound) {
-    return (
-      <main
-        style={{
-          minHeight: "100vh",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          background: "#f3f4f6",
-        }}
-      >
-        <div style={{ textAlign: "center" }}>
-          <p>ไม่พบใบเสนอราคา</p>
-          <button
-            type="button"
-            onClick={() => router.push("/quotations/list")}
-            style={{ ...secondaryButton, marginTop: "12px" }}
-          >
-            ← กลับรายการ
-          </button>
-        </div>
-      </main>
-    );
-  }
+  return <main style={{minHeight:"100vh",background:"#f3f4f6",padding:24,color:"#111827"}}><div style={{maxWidth:1500,margin:"0 auto"}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap",marginBottom:18}}><div><h1 style={{margin:0}}>แก้ไขใบเสนอราคา</h1><p style={{color:"#6b7280"}}>เลือกวัสดุและราคาจากฐานข้อมูลสินค้าโดยตรง</p></div><button style={secondaryButton} onClick={()=>router.push(`/quotations/${id}`)}>← ยกเลิก</button></div>
 
-  return (
-    <main
-      style={{
-        minHeight: "100vh",
-        background: "#f3f4f6",
-        padding: "32px",
-        color: "#111827",
-      }}
-    >
-      <div
-        style={{
-          maxWidth: "1500px",
-          margin: "0 auto",
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            marginBottom: "24px",
-            gap: "16px",
-            flexWrap: "wrap",
-          }}
-        >
-          <div>
-            <h1 style={{ margin: 0, fontSize: "32px" }}>แก้ไขใบเสนอราคา</h1>
-            <p style={{ marginTop: "6px", color: "#6b7280" }}>
-              แก้ไขข้อมูลใบเสนอราคา {quotation.quotation_no}
-            </p>
-          </div>
+    <section style={{background:"white",borderRadius:12,padding:18,marginBottom:18}}><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:14}}>
+      <label>เลขที่ใบเสนอราคา<input style={{...inputStyle,marginTop:6}} value={quotation.quotation_no} readOnly/></label>
+      <label>วันที่เสนอราคา<input type="date" style={{...inputStyle,marginTop:6}} value={quotation.quotation_date} onChange={e=>setQuotation({...quotation,quotation_date:e.target.value})}/></label>
+      <label>ยืนราคา (วัน)<input type="number" min="1" style={{...inputStyle,marginTop:6}} value={quotation.valid_days} onChange={e=>setQuotation({...quotation,valid_days:e.target.value})}/></label>
+      <label>ลูกค้า *<select style={{...inputStyle,marginTop:6}} value={quotation.customer_id} onChange={e=>setQuotation({...quotation,customer_id:e.target.value})}><option value="">-- เลือกลูกค้า --</option>{customers.map(c=><option key={c.id} value={c.id}>{c.customer_code||"-"} - {c.company_name||c.contact_name||"ไม่ระบุชื่อ"}</option>)}</select></label>
+      <label style={{gridColumn:"span 2"}}>ชื่อโครงการ / งาน *<input style={{...inputStyle,marginTop:6}} value={quotation.project_name} onChange={e=>setQuotation({...quotation,project_name:e.target.value})}/></label>
+    </div></section>
 
-          <button
-            type="button"
-            onClick={() => router.push(`/quotations/${id}`)}
-            style={secondaryButton}
-          >
-            ← ยกเลิก
-          </button>
-        </div>
+    <section style={{background:"white",borderRadius:12,overflow:"hidden",marginBottom:18}}>
+      <div style={{padding:16,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}><div><strong>รายการวัสดุ / งาน</strong><div style={{fontSize:12,color:"#6b7280",marginTop:4}}>เลือกประเภทงาน ระบบจะใส่หน่วยและราคามาตรฐานให้อัตโนมัติ</div></div><button style={primaryButton} onClick={addItem}>+ เพิ่มรายการ</button></div>
+      <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",minWidth:1280}}><thead><tr><th style={th}>#</th><th style={th}>ประเภทงาน / วัสดุ</th><th style={th}>รายละเอียด</th><th style={th}>ขนาด / ความสูง</th><th style={th}>จำนวน</th><th style={th}>หน่วย</th><th style={th}>ราคา/หน่วย</th><th style={th}>จำนวนเงิน</th><th style={th}>จัดการ</th></tr></thead><tbody>
+      {items.map((i,index)=>{const p=getProduct(i.product_key),r=calc(i);return <tr key={i.clientId}><td style={td}>{index+1}</td><td style={td}><select style={inputStyle} value={i.product_key} onChange={e=>changeProduct(i.clientId,e.target.value)}>{products().map(x=><option key={x.product_key} value={x.product_key}>{x.name}</option>)}</select></td><td style={td}><input style={inputStyle} value={i.description} disabled={i.product_key!=="custom"} onChange={e=>updateItem(i.clientId,"description",e.target.value)}/></td><td style={td}><input style={inputStyle} value={i.size} onChange={e=>updateItem(i.clientId,"size",e.target.value)} placeholder={p.calculation==="sqm"?"200 x 100":p.calculation==="height_inch"?"20":"-"}/><small style={{display:"block",marginTop:4,color:"#6b7280"}}>{r.text}</small></td><td style={td}><input type="number" min="1" style={inputStyle} value={i.quantity} onChange={e=>updateItem(i.clientId,"quantity",e.target.value)}/></td><td style={td}>{i.unit}</td><td style={td}><input type="number" min="0" step="0.01" style={inputStyle} value={i.unit_price} disabled={p.calculation==="sheet_tier"} onChange={e=>updateItem(i.clientId,"unit_price",e.target.value)}/>{p.calculation==="sheet_tier"&&<small style={{display:"block",marginTop:4,color:"#2563eb"}}>ราคาอัตโนมัติตามจำนวน</small>}</td><td style={{...td,textAlign:"right",fontWeight:800}}>฿{money(r.amount)}</td><td style={td}><button style={{padding:"8px 10px",border:0,borderRadius:6,background:"#dc2626",color:"white"}} onClick={()=>removeItem(i.clientId)}>ลบ</button></td></tr>})}
+      </tbody></table></div>
+    </section>
 
-        <section
-          style={{
-            background: "white",
-            borderRadius: "12px",
-            padding: "24px",
-            marginBottom: "20px",
-            boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
-          }}
-        >
-          <h2 style={{ marginTop: 0 }}>ข้อมูลใบเสนอราคา</h2>
+    <section style={{display:"grid",gridTemplateColumns:"1fr minmax(300px,420px)",gap:18}}><div style={{background:"white",borderRadius:12,padding:18}}><h2 style={{marginTop:0,fontSize:18}}>หมายเหตุ / เงื่อนไข</h2><textarea rows={8} style={{...inputStyle,resize:"vertical"}} value={quotation.note} onChange={e=>setQuotation({...quotation,note:e.target.value})}/></div><div style={{background:"white",borderRadius:12,padding:18}}><h2 style={{marginTop:0,fontSize:18}}>สรุปราคา</h2><div style={{display:"grid",gap:10}}><label>ส่วนลด (บาท)<input type="number" min="0" style={inputStyle} value={quotation.discount} onChange={e=>setQuotation({...quotation,discount:e.target.value})}/></label><label>VAT (%)<input type="number" min="0" style={inputStyle} value={quotation.vat_percent} onChange={e=>setQuotation({...quotation,vat_percent:e.target.value})}/></label><div>ยอดก่อนลด <strong style={{float:"right"}}>฿{money(subtotal)}</strong></div><div>VAT <strong style={{float:"right"}}>฿{money(vatAmount)}</strong></div><div style={{fontSize:22,borderTop:"1px solid #e5e7eb",paddingTop:12}}>ยอดสุทธิ <strong style={{float:"right",color:"#1d4ed8"}}>฿{money(grandTotal)}</strong></div></div></div></section>
 
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-              gap: "16px",
-            }}
-          >
-            <div>
-              <label>เลขที่ใบเสนอราคา</label>
-              <input
-                value={quotation.quotation_no}
-                readOnly
-                style={{
-                  ...inputStyle,
-                  marginTop: "6px",
-                  background: "#f9fafb",
-                }}
-              />
-            </div>
-
-            <div>
-              <label>วันที่เสนอราคา</label>
-              <input
-                type="date"
-                value={quotation.quotation_date}
-                onChange={(e) =>
-                  setQuotation({
-                    ...quotation,
-                    quotation_date: e.target.value,
-                  })
-                }
-                style={{
-                  ...inputStyle,
-                  marginTop: "6px",
-                }}
-              />
-            </div>
-
-            <div>
-              <label>ยืนราคา</label>
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "8px",
-                  marginTop: "6px",
-                }}
-              >
-                <input
-                  type="number"
-                  min="1"
-                  value={quotation.valid_days}
-                  onChange={(e) =>
-                    setQuotation({
-                      ...quotation,
-                      valid_days: Number(e.target.value),
-                    })
-                  }
-                  style={inputStyle}
-                />
-                <span>วัน</span>
-              </div>
-            </div>
-
-            <div>
-              <label>ลูกค้า *</label>
-              <select
-                value={quotation.customer_id}
-                onChange={(e) =>
-                  setQuotation({
-                    ...quotation,
-                    customer_id: e.target.value,
-                  })
-                }
-                style={{
-                  ...inputStyle,
-                  marginTop: "6px",
-                }}
-              >
-                <option value="">-- เลือกลูกค้า --</option>
-                {customers.map((customer) => (
-                  <option key={customer.id} value={customer.id}>
-                    {customer.customer_code} -{" "}
-                    {customer.company_name || customer.contact_name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div style={{ gridColumn: "span 2" }}>
-              <label>ชื่อโครงการ / ชื่องาน *</label>
-              <input
-                value={quotation.project_name}
-                onChange={(e) =>
-                  setQuotation({
-                    ...quotation,
-                    project_name: e.target.value,
-                  })
-                }
-                placeholder="เช่น ป้ายหน้าร้าน ABC"
-                style={{
-                  ...inputStyle,
-                  marginTop: "6px",
-                }}
-              />
-            </div>
-          </div>
-        </section>
-
-        <section
-          style={{
-            background: "white",
-            borderRadius: "12px",
-            overflow: "hidden",
-            marginBottom: "20px",
-            boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
-          }}
-        >
-          <div
-            style={{
-              padding: "20px 24px",
-              borderBottom: "1px solid #e5e7eb",
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              gap: "12px",
-              flexWrap: "wrap",
-            }}
-          >
-            <div>
-              <h2 style={{ margin: 0 }}>รายการงาน</h2>
-              <p style={{ margin: "4px 0 0", color: "#6b7280" }}>
-                กรอกขนาดเป็นเซนติเมตร ระบบจะคำนวณพื้นที่ให้อัตโนมัติ
-              </p>
-            </div>
-
-            <button type="button" onClick={addItem} style={primaryButton}>
-              + เพิ่มรายการ
-            </button>
-          </div>
-
-          <div style={{ overflowX: "auto" }}>
-            <table
-              style={{
-                width: "100%",
-                borderCollapse: "collapse",
-                minWidth: "1250px",
-              }}
-            >
-              <thead style={{ background: "#f9fafb" }}>
-                <tr>
-                  <th style={{ padding: "12px" }}>#</th>
-                  <th style={{ padding: "12px", textAlign: "left" }}>
-                    รายละเอียด
-                  </th>
-                  <th style={{ padding: "12px" }}>กว้าง (ซม.)</th>
-                  <th style={{ padding: "12px" }}>สูง (ซม.)</th>
-                  <th style={{ padding: "12px" }}>พื้นที่</th>
-                  <th style={{ padding: "12px" }}>จำนวน</th>
-                  <th style={{ padding: "12px" }}>หน่วย</th>
-                  <th style={{ padding: "12px" }}>ราคาต่อหน่วย</th>
-                  <th style={{ padding: "12px" }}>รวม</th>
-                  <th style={{ padding: "12px" }}>จัดการ</th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {items.map((item, index) => {
-                  const area = calculateArea(item);
-                  const lineTotal = calculateLineTotal(item);
-
-                  return (
-                    <tr
-                      key={item.clientId}
-                      style={{ borderTop: "1px solid #e5e7eb" }}
-                    >
-                      <td style={{ padding: "12px", textAlign: "center" }}>
-                        {index + 1}
-                      </td>
-
-                      <td style={{ padding: "12px" }}>
-                        <input
-                          value={item.description}
-                          onChange={(e) =>
-                            updateItem(
-                              item.clientId,
-                              "description",
-                              e.target.value
-                            )
-                          }
-                          placeholder="เช่น ป้ายตัวอักษรสแตนเลส"
-                          style={inputStyle}
-                        />
-                      </td>
-
-                      <td style={{ padding: "12px" }}>
-                        <input
-                          type="number"
-                          min="0"
-                          value={item.width}
-                          onChange={(e) =>
-                            updateItem(item.clientId, "width", e.target.value)
-                          }
-                          placeholder="100"
-                          style={inputStyle}
-                        />
-                      </td>
-
-                      <td style={{ padding: "12px" }}>
-                        <input
-                          type="number"
-                          min="0"
-                          value={item.height}
-                          onChange={(e) =>
-                            updateItem(item.clientId, "height", e.target.value)
-                          }
-                          placeholder="200"
-                          style={inputStyle}
-                        />
-                      </td>
-
-                      <td
-                        style={{
-                          padding: "12px",
-                          textAlign: "center",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {formatArea(area)} ตร.ม.
-                      </td>
-
-                      <td style={{ padding: "12px" }}>
-                        <input
-                          type="number"
-                          min="1"
-                          value={item.quantity}
-                          onChange={(e) =>
-                            updateItem(
-                              item.clientId,
-                              "quantity",
-                              e.target.value
-                            )
-                          }
-                          style={inputStyle}
-                        />
-                      </td>
-
-                      <td style={{ padding: "12px" }}>
-                        <select
-                          value={item.unit}
-                          onChange={(e) =>
-                            updateItem(item.clientId, "unit", e.target.value)
-                          }
-                          style={inputStyle}
-                        >
-                          <option>ตร.ม.</option>
-                          <option>งาน</option>
-                          <option>ชิ้น</option>
-                          <option>ชุด</option>
-                          <option>ตัว</option>
-                          <option>เมตร</option>
-                        </select>
-                      </td>
-
-                      <td style={{ padding: "12px" }}>
-                        <input
-                          type="number"
-                          min="0"
-                          value={item.unit_price}
-                          onChange={(e) =>
-                            updateItem(
-                              item.clientId,
-                              "unit_price",
-                              e.target.value
-                            )
-                          }
-                          style={inputStyle}
-                        />
-                      </td>
-
-                      <td
-                        style={{
-                          padding: "12px",
-                          textAlign: "right",
-                          fontWeight: "700",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        ฿{formatMoney(lineTotal)}
-                      </td>
-
-                      <td style={{ padding: "12px", textAlign: "center" }}>
-                        <button
-                          type="button"
-                          onClick={() => removeItem(item.clientId)}
-                          style={{
-                            padding: "8px 10px",
-                            border: "none",
-                            borderRadius: "6px",
-                            background: "#dc2626",
-                            color: "white",
-                            cursor: "pointer",
-                          }}
-                        >
-                          ลบ
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </section>
-
-        <section
-          style={{
-            display: "grid",
-            gridTemplateColumns: "1fr 420px",
-            gap: "20px",
-          }}
-        >
-          <div
-            style={{
-              background: "white",
-              borderRadius: "12px",
-              padding: "24px",
-              boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
-            }}
-          >
-            <h2 style={{ marginTop: 0 }}>หมายเหตุ / เงื่อนไข</h2>
-            <textarea
-              rows="8"
-              value={quotation.note}
-              onChange={(e) =>
-                setQuotation({
-                  ...quotation,
-                  note: e.target.value,
-                })
-              }
-              placeholder="เช่น มัดจำ 50% ก่อนเริ่มผลิต ระยะเวลาผลิต 15 วัน"
-              style={{
-                ...inputStyle,
-                resize: "vertical",
-              }}
-            />
-          </div>
-
-          <div
-            style={{
-              background: "white",
-              borderRadius: "12px",
-              padding: "24px",
-              boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
-            }}
-          >
-            <h2 style={{ marginTop: 0 }}>สรุปราคา</h2>
-
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                marginBottom: "14px",
-              }}
-            >
-              <span>subtotal</span>
-              <strong>฿{formatMoney(subtotal)}</strong>
-            </div>
-
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 140px",
-                gap: "12px",
-                alignItems: "center",
-                marginBottom: "14px",
-              }}
-            >
-              <span>discount</span>
-              <input
-                type="number"
-                min="0"
-                value={quotation.discount}
-                onChange={(e) =>
-                  setQuotation({
-                    ...quotation,
-                    discount: Number(e.target.value),
-                  })
-                }
-                style={inputStyle}
-              />
-            </div>
-
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 140px",
-                gap: "12px",
-                alignItems: "center",
-                marginBottom: "14px",
-              }}
-            >
-              <span>vat_percent</span>
-              <input
-                type="number"
-                min="0"
-                value={quotation.vat_percent}
-                onChange={(e) =>
-                  setQuotation({
-                    ...quotation,
-                    vat_percent: Number(e.target.value),
-                  })
-                }
-                style={inputStyle}
-              />
-            </div>
-
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                marginBottom: "14px",
-              }}
-            >
-              <span>vat_amount</span>
-              <strong>฿{formatMoney(vatAmount)}</strong>
-            </div>
-
-            <hr
-              style={{
-                border: 0,
-                borderTop: "1px solid #e5e7eb",
-                margin: "18px 0",
-              }}
-            />
-
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                fontSize: "22px",
-              }}
-            >
-              <strong>grand_total</strong>
-              <strong style={{ color: "#2563eb" }}>
-                ฿{formatMoney(grandTotal)}
-              </strong>
-            </div>
-
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                gap: "12px",
-                marginTop: "24px",
-              }}
-            >
-              <button
-                type="button"
-                onClick={() => router.push(`/quotations/${id}`)}
-                style={secondaryButton}
-              >
-                ยกเลิก
-              </button>
-
-              <button
-                type="button"
-                onClick={handleSave}
-                disabled={saving}
-                style={{
-                  ...primaryButton,
-                  opacity: saving ? 0.6 : 1,
-                }}
-              >
-                {saving ? "กำลังบันทึก..." : "บันทึกการแก้ไข"}
-              </button>
-            </div>
-          </div>
-        </section>
-      </div>
-    </main>
-  );
+    <div style={{display:"flex",justifyContent:"flex-end",gap:10,marginTop:18}}><button style={secondaryButton} onClick={()=>router.push(`/quotations/${id}`)}>ยกเลิก</button><button style={{...primaryButton,opacity:saving?.6:1}} disabled={saving} onClick={handleSave}>{saving?"กำลังบันทึก...":"บันทึกการแก้ไข"}</button></div>
+  </div></main>;
 }
