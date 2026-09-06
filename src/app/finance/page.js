@@ -1,495 +1,166 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../lib/supabase";
 
+const CATEGORIES = ["รายได้งานป้าย","เงินมัดจำ","ค่าวัสดุ","ค่าแรง","ค่าน้ำมัน/เดินทาง","ค่าเครื่องมือ","ค่าใช้จ่ายสำนักงาน","ภาษี/ค่าธรรมเนียม","อื่น ๆ"];
+
 export default function FinancePage() {
   const router = useRouter();
-
   const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [transactions, setTransactions] = useState([]);
   const [invoices, setInvoices] = useState([]);
   const [receipts, setReceipts] = useState([]);
+  const [range, setRange] = useState("month");
+  const [status, setStatus] = useState("all");
+  const [form, setForm] = useState({ direction:"expense", amount:"", category:"ค่าวัสดุ", description:"", project_name:"", transaction_date:new Date().toISOString().slice(0,10) });
 
-  useEffect(() => {
-    loadFinance();
-  }, []);
+  useEffect(() => { loadAll(); }, []);
 
-  async function loadFinance() {
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-
-    if (!session) {
-      router.push("/login");
-      return;
-    }
-
-    const [invoiceResult, receiptResult] = await Promise.all([
-      supabase
-        .from("invoices")
-        .select(`
-          id,
-          invoice_no,
-          project_name,
-          grand_total,
-          status,
-          created_at,
-          customers (
-            customer_code,
-            company_name,
-            contact_name
-          )
-        `)
-        .order("created_at", { ascending: false }),
-
-      supabase
-        .from("receipts")
-        .select(`
-          id,
-          receipt_no,
-          project_name,
-          grand_total,
-          status,
-          created_at,
-          customers (
-            customer_code,
-            company_name,
-            contact_name
-          )
-        `)
-        .order("created_at", { ascending: false }),
+  async function loadAll() {
+    setLoading(true);
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) { router.push("/login"); return; }
+    const [tx, inv, rec] = await Promise.all([
+      supabase.from("finance_transactions").select("*").order("transaction_date", { ascending:false }),
+      supabase.from("invoices").select("id,invoice_no,project_name,grand_total,status,created_at").order("created_at", { ascending:false }),
+      supabase.from("receipts").select("id,receipt_no,project_name,grand_total,status,created_at").order("created_at", { ascending:false }),
     ]);
-
-    if (invoiceResult.error) {
-      alert("โหลด Invoice ไม่สำเร็จ: " + invoiceResult.error.message);
-    }
-
-    if (receiptResult.error) {
-      alert("โหลด Receipt ไม่สำเร็จ: " + receiptResult.error.message);
-    }
-
-    setInvoices(invoiceResult.data || []);
-    setReceipts(receiptResult.data || []);
-    setLoading(false);
+    if (tx.error && tx.error.code !== "42P01") alert("ยังไม่ได้รัน migration บัญชีอัจฉริยะ: " + tx.error.message);
+    setTransactions(tx.data || []); setInvoices(inv.data || []); setReceipts(rec.data || []); setLoading(false);
   }
 
-  function money(value) {
-    return new Intl.NumberFormat("th-TH", {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(Number(value || 0));
+  function inRange(dateValue) {
+    const d = new Date(dateValue); const now = new Date();
+    if (range === "all") return true;
+    if (range === "week") { const from = new Date(now); from.setDate(now.getDate()-6); from.setHours(0,0,0,0); return d >= from; }
+    if (range === "month") return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+    if (range === "year") return d.getFullYear() === now.getFullYear();
+    return true;
   }
 
-  function customerName(item) {
-    return (
-      item.customers?.company_name ||
-      item.customers?.contact_name ||
-      item.customers?.customer_code ||
-      "-"
-    );
+  const filtered = useMemo(() => transactions.filter(x => inRange(x.transaction_date) && (status === "all" || x.status === status)), [transactions, range, status]);
+  const confirmed = useMemo(() => filtered.filter(x=>x.status === "confirmed"), [filtered]);
+  const income = confirmed.filter(x=>x.direction === "income").reduce((s,x)=>s+Number(x.amount||0),0);
+  const expense = confirmed.filter(x=>x.direction === "expense").reduce((s,x)=>s+Number(x.amount||0),0);
+  const pending = filtered.filter(x=>x.status === "pending").length;
+  const net = income-expense;
+  const invoiced = invoices.filter(x=>x.status !== "cancelled").reduce((s,x)=>s+Number(x.grand_total||0),0);
+  const received = receipts.filter(x=>x.status === "received").reduce((s,x)=>s+Number(x.grand_total||0),0);
+
+  const projects = useMemo(() => {
+    const map = {};
+    confirmed.forEach(x => {
+      const key = x.project_name?.trim() || "ไม่ระบุงาน";
+      map[key] ||= { name:key, income:0, expense:0 };
+      map[key][x.direction] += Number(x.amount||0);
+    });
+    return Object.values(map).map(x=>({...x, profit:x.income-x.expense})).sort((a,b)=>b.profit-a.profit);
+  }, [confirmed]);
+
+  async function uploadImages(e) {
+    const files = Array.from(e.target.files || []); if (!files.length) return;
+    setBusy(true);
+    try {
+      const { data:{ session } } = await supabase.auth.getSession();
+      for (const file of files) {
+        const safe = `${Date.now()}-${crypto.randomUUID()}-${file.name.replace(/[^a-zA-Z0-9._-]/g,"_")}`;
+        const path = `gallery/${session.user.id}/${safe}`;
+        const up = await supabase.storage.from("finance-evidence").upload(path, file, { contentType:file.type, upsert:false });
+        if (up.error) throw up.error;
+        const res = await fetch("/api/finance/analyze", { method:"POST", headers:{ "Content-Type":"application/json", Authorization:`Bearer ${session.access_token}` }, body:JSON.stringify({ path }) });
+        if (!res.ok && res.status !== 409) throw new Error((await res.json()).error || "AI วิเคราะห์ไม่สำเร็จ");
+      }
+      await loadAll();
+    } catch (err) { alert(err.message); } finally { setBusy(false); e.target.value=""; }
   }
 
-  const totalInvoiced = useMemo(() => {
-    return invoices
-      .filter((item) => item.status !== "cancelled")
-      .reduce((sum, item) => sum + Number(item.grand_total || 0), 0);
-  }, [invoices]);
+  async function addManual(e) {
+    e.preventDefault();
+    if (!form.amount) return;
+    const { data:{ user } } = await supabase.auth.getUser();
+    const { error } = await supabase.from("finance_transactions").insert({ ...form, amount:Number(form.amount), transaction_date:new Date(`${form.transaction_date}T12:00:00+07:00`).toISOString(), source:"manual", status:"confirmed", created_by:user?.id || null });
+    if (error) return alert(error.message);
+    setForm({ ...form, amount:"", description:"", project_name:"" }); await loadAll();
+  }
 
-  const totalPaid = useMemo(() => {
-    return receipts
-      .filter((item) => item.status === "received")
-      .reduce((sum, item) => sum + Number(item.grand_total || 0), 0);
-  }, [receipts]);
+  async function setTxStatus(id, next) {
+    const { error } = await supabase.from("finance_transactions").update({ status:next }).eq("id",id);
+    if (error) return alert(error.message); await loadAll();
+  }
 
-  const receivable = useMemo(() => {
-    return invoices
-      .filter((item) => item.status === "pending")
-      .reduce((sum, item) => sum + Number(item.grand_total || 0), 0);
-  }, [invoices]);
+  async function updateField(id, field, value) {
+    const { error } = await supabase.from("finance_transactions").update({ [field]:value }).eq("id",id);
+    if (error) alert(error.message); else setTransactions(prev=>prev.map(x=>x.id===id?{...x,[field]:value}:x));
+  }
 
-  const paidInvoices = useMemo(() => {
-    return invoices.filter((item) => item.status === "paid");
-  }, [invoices]);
+  function money(v) { return new Intl.NumberFormat("th-TH", { minimumFractionDigits:2, maximumFractionDigits:2 }).format(Number(v||0)); }
 
-  const pendingInvoices = useMemo(() => {
-    return invoices.filter((item) => item.status === "pending");
-  }, [invoices]);
-
-  return (
-    <main
-      style={{
-        minHeight: "100vh",
-        background: "#f3f4f6",
-        color: "#111827",
-        padding: "32px",
-      }}
-    >
-      <div style={{ maxWidth: "1400px", margin: "0 auto" }}>
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            gap: "12px",
-            marginBottom: "24px",
-            flexWrap: "wrap",
-          }}
-        >
-          <div>
-            <h1 style={{ margin: 0, fontSize: "32px" }}>การเงิน</h1>
-            <p style={{ color: "#6b7280", marginTop: "6px" }}>
-              สรุปรายรับ ลูกหนี้ และเอกสารทางการเงิน
-            </p>
-          </div>
-
-          <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
-            <button
-              onClick={() => router.push("/invoices/list")}
-              style={secondaryButton}
-            >
-              ใบแจ้งหนี้
-            </button>
-
-            <button
-              onClick={() => router.push("/receipts/list")}
-              style={secondaryButton}
-            >
-              ใบเสร็จรับเงิน
-            </button>
-
-            <button
-              onClick={() => router.push("/")}
-              style={secondaryButton}
-            >
-              ← Dashboard
-            </button>
-          </div>
-        </div>
-
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-            gap: "16px",
-            marginBottom: "20px",
-          }}
-        >
-          <SummaryCard
-            title="ยอด Invoice ทั้งหมด"
-            value={loading ? "..." : `฿${money(totalInvoiced)}`}
-            sub={`${invoices.length} ใบ`}
-          />
-
-          <SummaryCard
-            title="รับชำระแล้ว"
-            value={loading ? "..." : `฿${money(totalPaid)}`}
-            sub={`${receipts.length} ใบเสร็จ`}
-          />
-
-          <SummaryCard
-            title="ลูกหนี้คงค้าง"
-            value={loading ? "..." : `฿${money(receivable)}`}
-            sub={`${pendingInvoices.length} Invoice รอชำระ`}
-          />
-
-          <SummaryCard
-            title="Invoice ชำระแล้ว"
-            value={loading ? "..." : `${paidInvoices.length} ใบ`}
-            sub="พร้อมออกใบเสร็จ"
-          />
-        </div>
-
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "1fr 1fr",
-            gap: "20px",
-            marginBottom: "20px",
-          }}
-        >
-          <section style={boxStyle}>
-            <div style={sectionHeader}>
-              <h2 style={{ margin: 0, fontSize: "20px" }}>
-                ลูกหนี้รอชำระ
-              </h2>
-
-              <button
-                onClick={() => router.push("/invoices/list")}
-                style={linkButton}
-              >
-                ดูทั้งหมด
-              </button>
-            </div>
-
-            <div>
-              {loading ? (
-                <div style={emptyStyle}>กำลังโหลด...</div>
-              ) : pendingInvoices.length === 0 ? (
-                <div style={emptyStyle}>ไม่มีลูกหนี้คงค้าง</div>
-              ) : (
-                pendingInvoices.map((item) => (
-                  <div
-                    key={item.id}
-                    onClick={() => router.push(`/invoices/${item.id}`)}
-                    style={rowStyle}
-                  >
-                    <div>
-                      <strong>{item.invoice_no}</strong>
-                      <div style={subText}>{customerName(item)}</div>
-                      <div style={subText}>
-                        {item.project_name || "-"}
-                      </div>
-                    </div>
-
-                    <strong>฿{money(item.grand_total)}</strong>
-                  </div>
-                ))
-              )}
-            </div>
-          </section>
-
-          <section style={boxStyle}>
-            <div style={sectionHeader}>
-              <h2 style={{ margin: 0, fontSize: "20px" }}>
-                รายรับล่าสุด
-              </h2>
-
-              <button
-                onClick={() => router.push("/receipts/list")}
-                style={linkButton}
-              >
-                ดูทั้งหมด
-              </button>
-            </div>
-
-            <div>
-              {loading ? (
-                <div style={emptyStyle}>กำลังโหลด...</div>
-              ) : receipts.length === 0 ? (
-                <div style={emptyStyle}>ยังไม่มีรายรับ</div>
-              ) : (
-                receipts.slice(0, 8).map((item) => (
-                  <div
-                    key={item.id}
-                    onClick={() => router.push(`/receipts/${item.id}`)}
-                    style={rowStyle}
-                  >
-                    <div>
-                      <strong>{item.receipt_no}</strong>
-                      <div style={subText}>{customerName(item)}</div>
-                      <div style={subText}>
-                        {item.project_name || "-"}
-                      </div>
-                    </div>
-
-                    <strong style={{ color: "#15803d" }}>
-                      ฿{money(item.grand_total)}
-                    </strong>
-                  </div>
-                ))
-              )}
-            </div>
-          </section>
-        </div>
-
-        <section style={boxStyle}>
-          <div style={sectionHeader}>
-            <h2 style={{ margin: 0, fontSize: "20px" }}>
-              สรุป Invoice ทั้งหมด
-            </h2>
-          </div>
-
-          <div style={{ overflowX: "auto" }}>
-            <table
-              style={{
-                width: "100%",
-                borderCollapse: "collapse",
-                minWidth: "800px",
-              }}
-            >
-              <thead style={{ background: "#f9fafb" }}>
-                <tr>
-                  <th style={th}>เลขที่</th>
-                  <th style={th}>ลูกค้า</th>
-                  <th style={th}>โครงการ / งาน</th>
-                  <th style={{ ...th, textAlign: "right" }}>ยอดสุทธิ</th>
-                  <th style={{ ...th, textAlign: "center" }}>สถานะ</th>
-                  <th style={{ ...th, textAlign: "center" }}>จัดการ</th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {loading ? (
-                  <tr>
-                    <td colSpan={6} style={emptyStyle}>
-                      กำลังโหลด...
-                    </td>
-                  </tr>
-                ) : invoices.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} style={emptyStyle}>
-                      ยังไม่มี Invoice
-                    </td>
-                  </tr>
-                ) : (
-                  invoices.map((item) => (
-                    <tr
-                      key={item.id}
-                      style={{ borderTop: "1px solid #e5e7eb" }}
-                    >
-                      <td style={td}>
-                        <strong>{item.invoice_no}</strong>
-                      </td>
-
-                      <td style={td}>{customerName(item)}</td>
-
-                      <td style={td}>{item.project_name || "-"}</td>
-
-                      <td style={{ ...td, textAlign: "right" }}>
-                        <strong>฿{money(item.grand_total)}</strong>
-                      </td>
-
-                      <td style={{ ...td, textAlign: "center" }}>
-                        {item.status === "paid"
-                          ? "ชำระแล้ว"
-                          : item.status === "pending"
-                          ? "รอชำระ"
-                          : "ยกเลิก"}
-                      </td>
-
-                      <td style={{ ...td, textAlign: "center" }}>
-                        <button
-                          onClick={() =>
-                            router.push(`/invoices/${item.id}`)
-                          }
-                          style={primaryButton}
-                        >
-                          เปิดดู
-                        </button>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      </div>
-    </main>
-  );
-}
-
-function SummaryCard({ title, value, sub }) {
-  return (
-    <div
-      style={{
-        background: "white",
-        padding: "20px",
-        borderRadius: "12px",
-        boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
-      }}
-    >
-      <div style={{ color: "#6b7280", fontSize: "13px" }}>
-        {title}
-      </div>
-
-      <div
-        style={{
-          marginTop: "8px",
-          fontSize: "27px",
-          fontWeight: "800",
-        }}
-      >
-        {value}
-      </div>
-
-      <div
-        style={{
-          marginTop: "6px",
-          color: "#9ca3af",
-          fontSize: "12px",
-        }}
-      >
-        {sub}
+  return <main style={{minHeight:"100vh",background:"#f3f4f6",padding:24,color:"#111827"}}><div style={{maxWidth:1500,margin:"0 auto"}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap",marginBottom:18}}>
+      <div><h1 style={{margin:0}}>การเงินอัจฉริยะ</h1><p style={{color:"#6b7280"}}>Gallery + LINE ห้องบัญชี + รายรับรายจ่าย + กำไรต่อ Job</p></div>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+        <label style={primaryButton}>{busy?"กำลังอ่านภาพ...":"📷 นำเข้าจาก Gallery"}<input type="file" accept="image/*" multiple onChange={uploadImages} disabled={busy} style={{display:"none"}}/></label>
+        <button style={secondaryButton} onClick={()=>router.push("/invoices/list")}>Invoice</button>
+        <button style={secondaryButton} onClick={()=>router.push("/receipts/list")}>Receipt</button>
+        <button style={secondaryButton} onClick={()=>router.push("/")}>← Dashboard</button>
       </div>
     </div>
-  );
+
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(190px,1fr))",gap:12,marginBottom:16}}>
+      <Card title="รายรับยืนยันแล้ว" value={`฿${money(income)}`} sub="เฉพาะรายการยืนยัน" />
+      <Card title="รายจ่ายยืนยันแล้ว" value={`฿${money(expense)}`} sub="เฉพาะรายการยืนยัน" />
+      <Card title="สุทธิ" value={`฿${money(net)}`} sub="รายรับ - รายจ่าย" />
+      <Card title="รอตรวจสอบ" value={`${pending} รายการ`} sub="จาก AI / LINE" />
+      <Card title="Invoice ทั้งหมด" value={`฿${money(invoiced)}`} sub={`${invoices.length} ใบ`} />
+      <Card title="Receipt รับแล้ว" value={`฿${money(received)}`} sub={`${receipts.length} ใบ`} />
+    </div>
+
+    <section style={box}><div style={header}><h2 style={{margin:0,fontSize:18}}>เพิ่มรายการด้วยตนเอง</h2></div>
+      <form onSubmit={addManual} style={{padding:16,display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:10}}>
+        <select value={form.direction} onChange={e=>setForm({...form,direction:e.target.value})} style={input}><option value="income">รายรับ</option><option value="expense">รายจ่าย</option></select>
+        <input type="number" step="0.01" placeholder="จำนวนเงิน" value={form.amount} onChange={e=>setForm({...form,amount:e.target.value})} style={input}/>
+        <select value={form.category} onChange={e=>setForm({...form,category:e.target.value})} style={input}>{CATEGORIES.map(x=><option key={x}>{x}</option>)}</select>
+        <input type="date" value={form.transaction_date} onChange={e=>setForm({...form,transaction_date:e.target.value})} style={input}/>
+        <input placeholder="ชื่องาน / Job" value={form.project_name} onChange={e=>setForm({...form,project_name:e.target.value})} style={input}/>
+        <input placeholder="รายละเอียด" value={form.description} onChange={e=>setForm({...form,description:e.target.value})} style={input}/>
+        <button style={primaryButton}>บันทึก</button>
+      </form>
+    </section>
+
+    <section style={{...box,marginTop:16}}><div style={header}><h2 style={{margin:0,fontSize:18}}>รายการบัญชี</h2><div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+      <select value={range} onChange={e=>setRange(e.target.value)} style={input}><option value="week">7 วันล่าสุด</option><option value="month">เดือนนี้</option><option value="year">ปีนี้</option><option value="all">ทั้งหมด</option></select>
+      <select value={status} onChange={e=>setStatus(e.target.value)} style={input}><option value="all">ทุกสถานะ</option><option value="pending">รอตรวจ</option><option value="confirmed">ยืนยันแล้ว</option><option value="rejected">ไม่รับรายการ</option></select>
+    </div></div>
+      <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",minWidth:1100}}><thead><tr><th style={th}>วันที่</th><th style={th}>ประเภท</th><th style={th}>จำนวน</th><th style={th}>หมวด</th><th style={th}>Job</th><th style={th}>รายละเอียด</th><th style={th}>แหล่ง</th><th style={th}>สถานะ</th><th style={th}>จัดการ</th></tr></thead><tbody>
+        {loading?<tr><td colSpan={9} style={empty}>กำลังโหลด...</td></tr>:filtered.length===0?<tr><td colSpan={9} style={empty}>ยังไม่มีรายการ</td></tr>:filtered.map(x=><tr key={x.id} style={{borderTop:"1px solid #e5e7eb"}}>
+          <td style={td}>{new Date(x.transaction_date).toLocaleDateString("th-TH")}</td>
+          <td style={td}><b style={{color:x.direction==="income"?"#15803d":"#b91c1c"}}>{x.direction==="income"?"รายรับ":"รายจ่าย"}</b></td>
+          <td style={td}><b>฿{money(x.amount)}</b></td>
+          <td style={td}><select value={x.category||"อื่น ๆ"} onChange={e=>updateField(x.id,"category",e.target.value)} style={smallInput}>{CATEGORIES.map(c=><option key={c}>{c}</option>)}</select></td>
+          <td style={td}><input value={x.project_name||""} onChange={e=>updateField(x.id,"project_name",e.target.value)} placeholder="ผูกกับงาน" style={smallInput}/></td>
+          <td style={td}>{x.description||x.counterparty||"-"}</td>
+          <td style={td}>{x.source==="line"?"LINE":x.source==="gallery"?"Gallery":"กรอกเอง"}</td>
+          <td style={td}>{x.status==="pending"?"รอตรวจ":x.status==="confirmed"?"ยืนยันแล้ว":"ไม่รับ"}</td>
+          <td style={td}><div style={{display:"flex",gap:6}}>{x.status!=="confirmed"&&<button onClick={()=>setTxStatus(x.id,"confirmed")} style={okBtn}>ยืนยัน</button>}{x.status!=="rejected"&&<button onClick={()=>setTxStatus(x.id,"rejected")} style={badBtn}>ไม่รับ</button>}</div></td>
+        </tr>)}</tbody></table></div>
+    </section>
+
+    <section style={{...box,marginTop:16}}><div style={header}><h2 style={{margin:0,fontSize:18}}>กำไร / ขาดทุน แยกตาม Job</h2></div><div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",minWidth:700}}><thead><tr><th style={th}>งาน</th><th style={th}>รายรับ</th><th style={th}>ต้นทุน/รายจ่าย</th><th style={th}>กำไร</th><th style={th}>Margin</th></tr></thead><tbody>{projects.map(p=><tr key={p.name} style={{borderTop:"1px solid #e5e7eb"}}><td style={td}><b>{p.name}</b></td><td style={td}>฿{money(p.income)}</td><td style={td}>฿{money(p.expense)}</td><td style={{...td,color:p.profit>=0?"#15803d":"#b91c1c",fontWeight:800}}>฿{money(p.profit)}</td><td style={td}>{p.income>0?`${((p.profit/p.income)*100).toFixed(1)}%` : "-"}</td></tr>)}</tbody></table></div></section>
+  </div></main>;
 }
 
-const boxStyle = {
-  background: "white",
-  borderRadius: "12px",
-  overflow: "hidden",
-  boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
-};
-
-const sectionHeader = {
-  padding: "18px 20px",
-  borderBottom: "1px solid #e5e7eb",
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-};
-
-const rowStyle = {
-  padding: "14px 20px",
-  borderBottom: "1px solid #e5e7eb",
-  display: "flex",
-  justifyContent: "space-between",
-  gap: "20px",
-  cursor: "pointer",
-};
-
-const subText = {
-  marginTop: "3px",
-  color: "#6b7280",
-  fontSize: "12px",
-};
-
-const primaryButton = {
-  padding: "8px 12px",
-  border: "none",
-  borderRadius: "7px",
-  background: "#2563eb",
-  color: "white",
-  cursor: "pointer",
-  fontWeight: "600",
-};
-
-const secondaryButton = {
-  padding: "9px 14px",
-  border: "1px solid #d1d5db",
-  borderRadius: "8px",
-  background: "white",
-  color: "#111827",
-  cursor: "pointer",
-  fontWeight: "600",
-};
-
-const linkButton = {
-  border: "none",
-  background: "transparent",
-  color: "#2563eb",
-  cursor: "pointer",
-  fontWeight: "600",
-};
-
-const th = {
-  padding: "13px 14px",
-  textAlign: "left",
-  fontSize: "13px",
-  color: "#374151",
-};
-
-const td = {
-  padding: "13px 14px",
-  fontSize: "13px",
-  color: "#111827",
-};
-
-const emptyStyle = {
-  padding: "35px",
-  textAlign: "center",
-  color: "#6b7280",
-};
+function Card({title,value,sub}){return <div style={{background:"white",padding:16,borderRadius:12,border:"1px solid #e5e7eb"}}><div style={{color:"#6b7280",fontSize:13}}>{title}</div><div style={{fontSize:24,fontWeight:800,marginTop:6}}>{value}</div><div style={{fontSize:12,color:"#9ca3af",marginTop:4}}>{sub}</div></div>}
+const box={background:"white",borderRadius:12,overflow:"hidden",border:"1px solid #e5e7eb"};
+const header={padding:"14px 16px",borderBottom:"1px solid #e5e7eb",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"};
+const input={padding:"10px 11px",border:"1px solid #d1d5db",borderRadius:8,background:"white"};
+const smallInput={...input,padding:"7px 8px",width:"100%",minWidth:130};
+const primaryButton={display:"inline-flex",alignItems:"center",justifyContent:"center",padding:"10px 14px",border:0,borderRadius:8,background:"#111827",color:"white",fontWeight:700,cursor:"pointer"};
+const secondaryButton={...primaryButton,background:"white",color:"#111827",border:"1px solid #d1d5db"};
+const okBtn={padding:"7px 9px",border:0,borderRadius:7,background:"#dcfce7",color:"#166534",fontWeight:700,cursor:"pointer"};
+const badBtn={padding:"7px 9px",border:0,borderRadius:7,background:"#fee2e2",color:"#991b1b",fontWeight:700,cursor:"pointer"};
+const th={padding:"11px 12px",textAlign:"left",fontSize:12,color:"#4b5563",background:"#f9fafb"};
+const td={padding:"11px 12px",fontSize:13,verticalAlign:"top"};
+const empty={padding:30,textAlign:"center",color:"#6b7280"};
