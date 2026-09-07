@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../../lib/supabase";
 
 const categories=["รายได้งานป้าย","เงินมัดจำ","ค่าวัสดุ","ค่าแรง","ค่าน้ำมัน/เดินทาง","ค่าเครื่องมือ","ค่าใช้จ่ายสำนักงาน","ภาษี/ค่าธรรมเนียม","อื่น ๆ"];
@@ -17,6 +17,7 @@ function parse(text=""){
 
 export default function LineFinancePage(){
   const [rows,setRows]=useState([]),[loading,setLoading]=useState(true),[busy,setBusy]=useState(false),[analyzing,setAnalyzing]=useState(null),[error,setError]=useState(""),[filter,setFilter]=useState("pending"),[drafts,setDrafts]=useState({}),[media,setMedia]=useState({});
+  const attempted=useRef(new Set());
 
   async function load(){
     setLoading(true);setError("");
@@ -32,8 +33,8 @@ export default function LineFinancePage(){
   useEffect(()=>{load();},[]);
   function change(id,key,value){setDrafts(p=>({...p,[id]:{...p[id],[key]:value}}));}
 
-  async function analyze(row){
-    setAnalyzing(row.id);setError("");
+  async function analyze(row,{silent=false}={}){
+    setAnalyzing(row.id);if(!silent)setError("");
     try{
       const {data:{session}}=await supabase.auth.getSession();
       if(!session) throw new Error("กรุณาเข้าสู่ระบบใหม่");
@@ -41,8 +42,14 @@ export default function LineFinancePage(){
       const payload=await res.json();
       if(!res.ok)throw new Error(payload.error||"AI วิเคราะห์ไม่สำเร็จ");
       await load();
-    }catch(e){setError(e.message||"AI วิเคราะห์ไม่สำเร็จ");}finally{setAnalyzing(null);}
+    }catch(e){if(!silent)setError(e.message||"AI วิเคราะห์ไม่สำเร็จ");}finally{setAnalyzing(null);}
   }
+
+  useEffect(()=>{
+    if(loading||analyzing)return;
+    const next=rows.find(x=>x.status==="pending"&&!x.analyzed_at&&!/ทดสอบ\s*\d*/i.test(x.message_text||"")&&!attempted.current.has(x.id)&&(x.message_type==="text"||x.mime_type?.startsWith("image/")));
+    if(next){attempted.current.add(next.id);analyze(next,{silent:true});}
+  },[rows,loading,analyzing]);
 
   async function review(row,action){
     if(!confirm(action==="reject"?"ปฏิเสธรายการนี้?":"ยืนยันบันทึกรายการเงินจริง?"))return;
@@ -56,9 +63,9 @@ export default function LineFinancePage(){
   const input={padding:9,border:"1px solid #d1d5db",borderRadius:7,width:"100%",boxSizing:"border-box",fontSize:14};
 
   return <main style={{padding:24,maxWidth:1240,margin:"auto",color:"#111827"}}>
-    <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"center",flexWrap:"wrap"}}><div><h1 style={{marginBottom:4}}>บัญชีจาก LINE</h1><p style={{marginTop:0,color:"#6b7280"}}>ข้อความและสลิปจะเข้าคิวรอตรวจสอบก่อนบันทึกเป็นเงินจริง</p></div><a href="/finance">← กลับหน้าการเงิน</a></div>
+    <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"center",flexWrap:"wrap"}}><div><h1 style={{marginBottom:4}}>บัญชีจาก LINE</h1><p style={{marginTop:0,color:"#6b7280"}}>ข้อความและสลิปจะเข้าคิวรอตรวจสอบก่อนบันทึกเป็นเงินจริง ระบบจะวิเคราะห์รายการใหม่อัตโนมัติเมื่อเปิดหน้านี้</p></div><a href="/finance">← กลับหน้าการเงิน</a></div>
     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10,margin:"16px 0"}}><Stat label="รอตรวจสอบ" value={counts.pending}/><Stat label="AI วิเคราะห์แล้ว" value={counts.analyzed}/><Stat label="อนุมัติแล้ว" value={counts.approved}/><Stat label="ปฏิเสธ" value={counts.rejected}/></div>
-    <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}><select style={{...input,width:190}} value={filter} onChange={e=>setFilter(e.target.value)}><option value="pending">รอตรวจสอบ</option><option value="approved">อนุมัติแล้ว</option><option value="rejected">ปฏิเสธ</option><option value="all">ทั้งหมด</option></select><button onClick={load} disabled={loading}>รีเฟรช</button></div>
+    <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}><select style={{...input,width:190}} value={filter} onChange={e=>setFilter(e.target.value)}><option value="pending">รอตรวจสอบ</option><option value="approved">อนุมัติแล้ว</option><option value="rejected">ปฏิเสธ</option><option value="all">ทั้งหมด</option></select><button onClick={load} disabled={loading}>รีเฟรช</button>{analyzing&&<span style={{padding:"8px 0",color:"#6b7280"}}>AI กำลังประมวลผลรายการใหม่...</span>}</div>
     {error&&<p role="alert" style={{color:"#b91c1c",background:"#fef2f2",padding:12,borderRadius:8}}>{error}</p>}
     {loading?<p>กำลังโหลด...</p>:visible.length===0?<p>ไม่มีรายการในสถานะนี้</p>:visible.map(row=>{
       const d=drafts[row.id]||parse(row.message_text||"");const test=/ทดสอบ\s*\d*/i.test(row.message_text||"");const url=row.storage_path?media[row.storage_path]:null;const canAnalyze=!test&&row.status==="pending"&&(row.message_type==="text"||row.mime_type?.startsWith("image/"));
