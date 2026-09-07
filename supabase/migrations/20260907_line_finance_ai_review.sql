@@ -70,7 +70,9 @@ begin
     coalesce(p_transaction_date,e.suggested_transaction_date,e.event_at,now()),
     p_direction,p_amount,coalesce(nullif(p_category,''),'อื่น ๆ'),p_description,p_project_name,
     'line','confirmed',e.line_message_id,e.group_id,e.sender_id,e.message_text,auth.uid(),
-    p_counterparty,p_bank_name,p_reference_no,greatest(0,least(1,p_ai_confidence)),e.storage_path
+    p_counterparty,p_bank_name,p_reference_no,
+    case when p_ai_confidence is null then null else greatest(0,least(1,p_ai_confidence)) end,
+    e.storage_path
   ) returning id into t;
 
   update public.line_account_entries
