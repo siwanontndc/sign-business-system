@@ -16,6 +16,7 @@ export default function DesktopSidebarMediaLink(){
   return <>
     {mediaRoles.includes(role)&&<button type="button" onClick={()=>router.push("/job-media")} style={{...base,bottom:74}}>📷 ส่งแบบ / รูปหน้างาน</button>}
     {financeRoles.includes(role)&&<button type="button" onClick={()=>router.push("/finance/line")} style={{...base,bottom:126,background:"#831843"}}>💬 บัญชีจาก LINE</button>}
-    {role==="owner"&&<button type="button" onClick={()=>router.push("/employees")} style={{...base,bottom:178,background:"#111827"}}>👥 จัดการพนักงาน</button>}
+    {financeRoles.includes(role)&&<button type="button" onClick={()=>router.push("/finance/reports")} style={{...base,bottom:178,background:"#374151"}}>📊 รายงานการเงิน</button>}
+    {role==="owner"&&<button type="button" onClick={()=>router.push("/employees")} style={{...base,bottom:230,background:"#111827"}}>👥 จัดการพนักงาน</button>}
   </>;
 }
