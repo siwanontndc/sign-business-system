@@ -15,6 +15,7 @@ function parseText(text = "") {
   return {
     direction,
     amount: Number.isFinite(amount) ? amount : null,
+    transaction_date: null,
     category: direction === "income" ? "รายได้งานป้าย" : direction === "expense" ? "ค่าวัสดุ" : "อื่น ๆ",
     description: text || "",
     counterparty: "",
@@ -73,6 +74,7 @@ export async function POST(request) {
       amount: Number(tx.amount || 0) > 0 ? Number(tx.amount) : null,
       category: tx.category || "อื่น ๆ",
       job_reference: tx.project_name || null,
+      suggested_transaction_date: tx.transaction_date || null,
       suggested_description: tx.description || null,
       suggested_counterparty: tx.counterparty || null,
       suggested_bank_name: tx.bank_name || null,
