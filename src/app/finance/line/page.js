@@ -33,13 +33,39 @@ export default function LineFinancePage(){
   useEffect(()=>{load();},[]);
   function change(id,key,value){setDrafts(p=>({...p,[id]:{...p[id],[key]:value}}));}
 
+  async function analyzeViaVercel(row,session){
+    const controller=new AbortController();
+    const timer=setTimeout(()=>controller.abort(),35000);
+    try{
+      const res=await fetch("/api/finance/line-analyze",{method:"POST",signal:controller.signal,headers:{"Content-Type":"application/json",Authorization:`Bearer ${session.access_token}`},body:JSON.stringify({id:row.id})});
+      const payload=await res.json().catch(()=>({}));
+      if(!res.ok)throw new Error(payload.error||`Server ${res.status}`);
+      if(payload?.error)throw new Error(payload.error);
+      return payload;
+    }catch(e){
+      if(e?.name==="AbortError")throw new Error("AI ใช้เวลานานเกิน 35 วินาที");
+      throw e;
+    }finally{clearTimeout(timer);}
+  }
+
   async function analyze(row,{silent=false}={}){
     setAnalyzing(row.id);if(!silent)setError("");
     try{
       if(!row.mime_type?.startsWith("image/")) throw new Error("AI อ่านอัตโนมัติใช้กับรูปสลิปเท่านั้น");
-      const {data,error}=await supabase.functions.invoke("finance-line-analyze",{body:{id:row.id}});
-      if(error) throw new Error(error.message||"AI วิเคราะห์ไม่สำเร็จ");
-      if(data?.error) throw new Error(data.error);
+      const {data:{session}}=await supabase.auth.getSession();
+      if(!session)throw new Error("กรุณาเข้าสู่ระบบใหม่");
+      let firstError=null;
+      try{
+        await analyzeViaVercel(row,session);
+      }catch(e){
+        firstError=e;
+        const edge=await Promise.race([
+          supabase.functions.invoke("finance-line-analyze",{body:{id:row.id}}),
+          new Promise((_,reject)=>setTimeout(()=>reject(new Error("Supabase AI timeout")),20000))
+        ]);
+        if(edge?.error)throw new Error(`${firstError?.message||"Vercel AI ล้มเหลว"} / ${edge.error.message||"Supabase AI ล้มเหลว"}`);
+        if(edge?.data?.error)throw new Error(`${firstError?.message||"Vercel AI ล้มเหลว"} / ${edge.data.error}`);
+      }
       setError("");
       await load();
     }catch(e){setError(`อ่านสลิปไม่สำเร็จ: ${e.message||"AI วิเคราะห์ไม่สำเร็จ"}`);}finally{setAnalyzing(null);}
