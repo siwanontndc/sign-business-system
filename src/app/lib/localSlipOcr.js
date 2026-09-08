@@ -25,36 +25,61 @@ async function makeEnhancedImage(file, cropTopOnly=false, cropRatio=0.62) {
   } finally { URL.revokeObjectURL(url); }
 }
 
+function largestDecimalAmount(text='') {
+  const vals=[];
+  const s=thaiDigitsToArabic(String(text)).replace(/[，]/g,',');
+  for(const m of s.matchAll(/(?:^|\s)([0-9OoIlSs|][0-9OoIlSs|,\s]{0,18}\.\s*\d{2})(?=\s|$)/gm)){
+    const n=normalizeMoneyToken(m[1]);
+    if(n!=null&&n>0&&n<100000000) vals.push(n);
+  }
+  return vals.length?Math.max(...vals):null;
+}
+
 export async function readSlipLocally(file, onProgress = () => {}) {
   if (!file || !file.type.startsWith('image/')) throw new Error('กรุณาเลือกรูปภาพสลิป');
   if (file.size > 15 * 1024 * 1024) throw new Error('รูปภาพต้องไม่เกิน 15 MB');
-  if (!workerPromise) workerPromise = import('tesseract.js').then(({createWorker}) => createWorker('tha+eng', 1, {logger: m => { if(m.status === 'recognizing text') onProgress(Math.min(78,Math.round(m.progress * 78))); }})).catch(e => {workerPromise = null; throw e;});
+  if (!workerPromise) workerPromise = import('tesseract.js').then(({createWorker}) => createWorker('tha+eng', 1, {logger: m => { if(m.status === 'recognizing text') onProgress(Math.min(70,Math.round(m.progress * 70))); }})).catch(e => {workerPromise = null; throw e;});
   const worker = await workerPromise;
   const enhanced = await makeEnhancedImage(file,false);
   const first = await worker.recognize(enhanced);
   let text=first.data.text||'';
   let fields=parseSlipText(text);
 
+  // Always perform a number-only pass when the first amount is missing or suspiciously small.
+  // This fixes cases where normal OCR drops the leading digit in values such as 5,136.00 -> 136.
+  if(!fields.amount || Number(fields.amount)<1000){
+    onProgress(74);
+    await worker.setParameters({
+      tessedit_pageseg_mode:'6',
+      preserve_interword_spaces:'1',
+      tessedit_char_whitelist:'0123456789OoIlSs|,. '
+    });
+    const moneyPass=await worker.recognize(enhanced);
+    const moneyText=moneyPass.data.text||'';
+    text += '\n' + moneyText;
+    const focused=largestDecimalAmount(moneyText);
+    fields=parseSlipText(text);
+    if(focused!=null && focused>Number(fields.amount||0)) fields.amount=String(focused);
+  }
+
   if(!fields.transaction_date){
-    onProgress(80);
+    onProgress(84);
     const top=await makeEnhancedImage(file,true,0.55);
-    await worker.setParameters({tessedit_pageseg_mode:'6',preserve_interword_spaces:'1'});
+    await worker.setParameters({tessedit_pageseg_mode:'6',preserve_interword_spaces:'1',tessedit_char_whitelist:''});
     const second=await worker.recognize(top);
     text += '\n' + (second.data.text||'');
     fields=parseSlipText(text);
   }
 
   if(!fields.transaction_date){
-    onProgress(92);
+    onProgress(94);
     const dateTop=await makeEnhancedImage(file,true,0.42);
-    await worker.setParameters({
-      tessedit_pageseg_mode:'6',
-      preserve_interword_spaces:'1',
-      tessedit_char_whitelist:'0123456789/-. :'
-    });
+    await worker.setParameters({tessedit_pageseg_mode:'6',preserve_interword_spaces:'1',tessedit_char_whitelist:'0123456789/-. :'});
     const third=await worker.recognize(dateTop);
     text += '\n' + (third.data.text||'');
+    const previousAmount=fields.amount;
     fields=parseSlipText(text);
+    if(previousAmount && Number(previousAmount)>Number(fields.amount||0)) fields.amount=previousAmount;
   }
 
   await worker.setParameters({tessedit_pageseg_mode:'3',preserve_interword_spaces:'0',tessedit_char_whitelist:''});
@@ -65,15 +90,8 @@ export async function readSlipLocally(file, onProgress = () => {}) {
 function thaiDigitsToArabic(s='') {return s.replace(/[๐-๙]/g,c=>String('๐๑๒๓๔๕๖๗๘๙'.indexOf(c)));}
 
 function normalizeDateOcr(s='') {
-  let out=thaiDigitsToArabic(String(s))
-    .replace(/[\u200b-\u200d]/g,' ')
-    .replace(/[|]/g,' ')
-    .replace(/[‐‑‒–—−]/g,'-')
-    .replace(/[／]/g,'/')
-    .replace(/[：]/g,':');
-  out=out
-    .replace(/(?<=[\d/\-.\s])[Oo](?=[\d/\-.\s])/g,'0')
-    .replace(/(?<=[\d/\-.\s])[Il](?=[\d/\-.\s])/g,'1');
+  let out=thaiDigitsToArabic(String(s)).replace(/[\u200b-\u200d]/g,' ').replace(/[|]/g,' ').replace(/[‐‑‒–—−]/g,'-').replace(/[／]/g,'/').replace(/[：]/g,':');
+  out=out.replace(/(?<=[\d/\-.\s])[Oo](?=[\d/\-.\s])/g,'0').replace(/(?<=[\d/\-.\s])[Il](?=[\d/\-.\s])/g,'1');
   return out;
 }
 
@@ -93,28 +111,16 @@ function findTransactionDate(text='') {
   for(const [to,pat] of fixes)s=s.replace(new RegExp(pat+'\\s*[\\.]?','g'),to);
   const monthMap={มค:1,มกราคม:1,กพ:2,กุมภาพันธ์:2,มีค:3,มีนาคม:3,เมย:4,เมษายน:4,พค:5,พฤษภาคม:5,มิย:6,มิถุนายน:6,กค:7,กรกฎาคม:7,สค:8,สิงหาคม:8,กย:9,กันยายน:9,ตค:10,ตุลาคม:10,พย:11,พฤศจิกายน:11,ธค:12,ธันวาคม:12,jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,sept:9,oct:10,nov:11,dec:12};
   const monthNames='มค|กพ|มีค|เมย|พค|มิย|กค|สค|กย|ตค|พย|ธค|มกราคม|กุมภาพันธ์|มีนาคม|เมษายน|พฤษภาคม|มิถุนายน|กรกฎาคม|สิงหาคม|กันยายน|ตุลาคม|พฤศจิกายน|ธันวาคม|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec';
-  const numericPatterns=[
-    /(?:วันที่|วันท|Date)?\s*[:：]?\s*(\d{1,2})\s*[\/\-.]\s*(\d{1,2})\s*[\/\-.]\s*(\d{2,4})(?=\D|$)/i,
-    /(?:วันที่|วันท|Date)\s*[:：]?\s*(\d{1,2})\s+(\d{1,2})\s+(\d{2,4})(?=\D|$)/i
-  ];
+  const numericPatterns=[/(?:วันที่|วันท|Date)?\s*[:：]?\s*(\d{1,2})\s*[\/\-.]\s*(\d{1,2})\s*[\/\-.]\s*(\d{2,4})(?=\D|$)/i,/(?:วันที่|วันท|Date)\s*[:：]?\s*(\d{1,2})\s+(\d{1,2})\s+(\d{2,4})(?=\D|$)/i];
   for(const re of numericPatterns){const m=s.match(re);if(!m)continue;const v=formatDate(m[1],m[2],m[3]);if(v)return v;}
-  const namedPatterns=[
-    new RegExp('(\\d{1,2})\\s*('+monthNames+')\\.?\\s*[,\\-]?\\s*(\\d{2,4})','i'),
-    new RegExp('(?:วันที่|วันท|Date)\\s*[:：]?\\s*(\\d{1,2})\\s*('+monthNames+')\\.?\\s*[,\\-]?\\s*(\\d{2,4})','i')
-  ];
+  const namedPatterns=[new RegExp('(\\d{1,2})\\s*('+monthNames+')\\.?\\s*[,\\-]?\\s*(\\d{2,4})','i'),new RegExp('(?:วันที่|วันท|Date)\\s*[:：]?\\s*(\\d{1,2})\\s*('+monthNames+')\\.?\\s*[,\\-]?\\s*(\\d{2,4})','i')];
   for(const re of namedPatterns){const m=s.match(re);if(!m)continue;const month=monthMap[m[2].toLowerCase()];const v=formatDate(m[1],month,m[3]);if(v)return v;}
   return '';
 }
 
 function normalizeMoneyToken(token=''){
-  let s=thaiDigitsToArabic(String(token))
-    .replace(/[，]/g,',')
-    .replace(/[Oo]/g,'0')
-    .replace(/[Il|]/g,'1')
-    .replace(/[Ss](?=\s*[,\d])/g,'5')
-    .replace(/\s+/g,'');
-  s=s.replace(/,(?=\d{3}(?:\D|$))/g,'');
-  s=s.replace(/,/g,'');
+  let s=thaiDigitsToArabic(String(token)).replace(/[，]/g,',').replace(/[Oo]/g,'0').replace(/[Il|]/g,'1').replace(/[Ss](?=\s*[,\d])/g,'5').replace(/\s+/g,'');
+  s=s.replace(/,(?=\d{3}(?:\D|$))/g,'').replace(/,/g,'');
   const n=Number(s);
   return Number.isFinite(n)&&n>=0?n:null;
 }
@@ -130,14 +136,7 @@ function findAmount(text=''){
     if(n!=null&&n>0) labelled.push(n);
   }
   if(labelled.length) return Math.max(...labelled);
-
-  const decimals=[];
-  const decRe=/(?:^|\s)([0-9OoIlSs|][0-9OoIlSs|,，\s]{0,18}\.\s*\d{2})(?=\s|$|บาท|฿)/gm;
-  for(const m of t.matchAll(decRe)){
-    const n=normalizeMoneyToken(m[1]);
-    if(n!=null&&n>0) decimals.push(n);
-  }
-  return decimals.length===1?decimals[0]:null;
+  return largestDecimalAmount(t);
 }
 
 export function parseSlipText(text){
