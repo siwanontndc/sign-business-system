@@ -6,12 +6,12 @@ const categories=["รายได้งานป้าย","เงินมั�
 function localDate(v){if(!v)return "";const d=new Date(v);if(Number.isNaN(d.getTime()))return "";const z=new Date(d.toLocaleString("en-US",{timeZone:"Asia/Bangkok"}));return `${z.getFullYear()}-${String(z.getMonth()+1).padStart(2,"0")}-${String(z.getDate()).padStart(2,"0")}`;}
 function parse(text=""){
   const t=text.replace(/\s+/g," ").trim();
-  const direction=/รายรับ|โอนเข้า|รับเงิน|ยอดเข้า/.test(t)?"income":/รายจ่าย|โอนออก|จ่าย|ซื้อ|ค่าวัสดุ|ค่าแรง|ค่าน้ำมัน/.test(t)?"expense":"";
+  const direction=/รายรับ|โอนเข้า|รับเงิน|ยอดเข้า/.test(t)?"income":/รายจ่าย|โอนออก|จ่าย|ซื้อ|ค่าวัสดุ|ค่าแรง|ค่าน้ำมัน|ค่าสี|ค่าไฟ/.test(t)?"expense":"";
   const near=t.match(/(?:รายรับ|รายจ่าย|โอนเข้า|โอนออก|รับเงิน|ยอดเข้า|จ่าย|ซื้อ|ค่าวัสดุ|ค่าแรง|ค่าน้ำมัน)[^\d]{0,30}([\d,]+(?:\.\d{1,2})?)/);
   const any=t.match(/([\d,]+(?:\.\d{1,2})?)\s*(?:บาท|บ\.?)/);
   let category="อื่น ๆ";
   if(direction==="income") category=/มัดจำ/.test(t)?"เงินมัดจำ":"รายได้งานป้าย";
-  if(direction==="expense") category=/วัสดุ/.test(t)?"ค่าวัสดุ":/ค่าแรง/.test(t)?"ค่าแรง":/น้ำมัน|เดินทาง/.test(t)?"ค่าน้ำมัน/เดินทาง":"อื่น ๆ";
+  if(direction==="expense") category=/วัสดุ|สี|ไฟ/.test(t)?"ค่าวัสดุ":/ค่าแรง/.test(t)?"ค่าแรง":/น้ำมัน|เดินทาง/.test(t)?"ค่าน้ำมัน/เดินทาง":"อื่น ๆ";
   return {direction,amount:(near?.[1]||any?.[1]||"").replaceAll(",",""),category,description:text,project_name:"",transaction_date:"",counterparty:"",bank_name:"",reference_no:"",ai_confidence:null};
 }
 
@@ -20,11 +20,11 @@ export default function LineFinancePage(){
   const attempted=useRef(new Set());
 
   async function load(){
-    setLoading(true);setError("");
+    setLoading(true);
     const {data,error}=await supabase.from("line_account_entries").select("*").order("created_at",{ascending:false}).limit(200);
     if(error){setError(error.message);setLoading(false);return;}
     const list=data||[];setRows(list);
-    setDrafts(Object.fromEntries(list.map(x=>{const p=parse(x.message_text||"");return [x.id,{...p,direction:x.entry_type||p.direction,amount:x.amount??p.amount,category:x.category||p.category,project_name:x.job_reference||"",description:x.suggested_description||p.description,transaction_date:localDate(x.suggested_transaction_date),counterparty:x.suggested_counterparty||"",bank_name:x.suggested_bank_name||"",reference_no:x.suggested_reference_no||"",ai_confidence:x.ai_confidence??null}]})));
+    setDrafts(Object.fromEntries(list.map(x=>{const p=parse(x.linked_note||x.message_text||"");return [x.id,{...p,direction:x.entry_type||p.direction,amount:x.amount??p.amount,category:x.category||p.category,project_name:x.job_reference||"",description:x.suggested_description||x.linked_note||p.description,transaction_date:localDate(x.suggested_transaction_date),counterparty:x.suggested_counterparty||"",bank_name:x.suggested_bank_name||"",reference_no:x.suggested_reference_no||"",ai_confidence:x.ai_confidence??null}]})));
     const signed={};
     await Promise.all(list.filter(x=>x.storage_path).map(async x=>{const {data}=await supabase.storage.from("line-account").createSignedUrl(x.storage_path,600);if(data?.signedUrl)signed[x.storage_path]=data.signedUrl;}));
     setMedia(signed);setLoading(false);
@@ -36,18 +36,18 @@ export default function LineFinancePage(){
   async function analyze(row,{silent=false}={}){
     setAnalyzing(row.id);if(!silent)setError("");
     try{
-      const {data:{session}}=await supabase.auth.getSession();
-      if(!session) throw new Error("กรุณาเข้าสู่ระบบใหม่");
-      const res=await fetch("/api/finance/line-analyze",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${session.access_token}`},body:JSON.stringify({id:row.id})});
-      const payload=await res.json();
-      if(!res.ok)throw new Error(payload.error||"AI วิเคราะห์ไม่สำเร็จ");
+      if(!row.mime_type?.startsWith("image/")) throw new Error("AI อ่านอัตโนมัติใช้กับรูปสลิปเท่านั้น");
+      const {data,error}=await supabase.functions.invoke("finance-line-analyze",{body:{id:row.id}});
+      if(error) throw new Error(error.message||"AI วิเคราะห์ไม่สำเร็จ");
+      if(data?.error) throw new Error(data.error);
+      setError("");
       await load();
-    }catch(e){if(!silent)setError(e.message||"AI วิเคราะห์ไม่สำเร็จ");}finally{setAnalyzing(null);}
+    }catch(e){setError(`อ่านสลิปไม่สำเร็จ: ${e.message||"AI วิเคราะห์ไม่สำเร็จ"}`);}finally{setAnalyzing(null);}
   }
 
   useEffect(()=>{
     if(loading||analyzing)return;
-    const next=rows.find(x=>x.status==="pending"&&!x.analyzed_at&&!/ทดสอบ\s*\d*/i.test(x.message_text||"")&&!attempted.current.has(x.id)&&(x.message_type==="text"||x.mime_type?.startsWith("image/")));
+    const next=rows.find(x=>x.status==="pending"&&!x.analyzed_at&&!attempted.current.has(x.id)&&x.mime_type?.startsWith("image/"));
     if(next){attempted.current.add(next.id);analyze(next,{silent:true});}
   },[rows,loading,analyzing]);
 
@@ -63,21 +63,22 @@ export default function LineFinancePage(){
   const input={padding:9,border:"1px solid #d1d5db",borderRadius:7,width:"100%",boxSizing:"border-box",fontSize:14};
 
   return <main style={{padding:24,maxWidth:1240,margin:"auto",color:"#111827"}}>
-    <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"center",flexWrap:"wrap"}}><div><h1 style={{marginBottom:4}}>บัญชีจาก LINE</h1><p style={{marginTop:0,color:"#6b7280"}}>ข้อความและสลิปจะเข้าคิวรอตรวจสอบก่อนบันทึกเป็นเงินจริง ระบบจะวิเคราะห์รายการใหม่อัตโนมัติเมื่อเปิดหน้านี้</p></div><a href="/finance">← กลับหน้าการเงิน</a></div>
+    <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"center",flexWrap:"wrap"}}><div><h1 style={{marginBottom:4}}>บัญชีจาก LINE</h1><p style={{marginTop:0,color:"#6b7280"}}>สลิปใหม่จะถูกอ่านด้วย AI อัตโนมัติ แล้วให้ตรวจแก้ก่อนบันทึกเงินจริง</p></div><a href="/finance">← กลับหน้าการเงิน</a></div>
     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10,margin:"16px 0"}}><Stat label="รอตรวจสอบ" value={counts.pending}/><Stat label="AI วิเคราะห์แล้ว" value={counts.analyzed}/><Stat label="อนุมัติแล้ว" value={counts.approved}/><Stat label="ปฏิเสธ" value={counts.rejected}/></div>
-    <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}><select style={{...input,width:190}} value={filter} onChange={e=>setFilter(e.target.value)}><option value="pending">รอตรวจสอบ</option><option value="approved">อนุมัติแล้ว</option><option value="rejected">ปฏิเสธ</option><option value="all">ทั้งหมด</option></select><button onClick={load} disabled={loading}>รีเฟรช</button>{analyzing&&<span style={{padding:"8px 0",color:"#6b7280"}}>AI กำลังประมวลผลรายการใหม่...</span>}</div>
-    {error&&<p role="alert" style={{color:"#b91c1c",background:"#fef2f2",padding:12,borderRadius:8}}>{error}</p>}
+    <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}><select style={{...input,width:190}} value={filter} onChange={e=>setFilter(e.target.value)}><option value="pending">รอตรวจสอบ</option><option value="approved">อนุมัติแล้ว</option><option value="rejected">ปฏิเสธ</option><option value="all">ทั้งหมด</option></select><button onClick={load} disabled={loading}>รีเฟรช</button>{analyzing&&<span style={{padding:"8px 0",color:"#6b7280"}}>AI กำลังอ่านยอด วันที่ ธนาคาร และเลขอ้างอิง...</span>}</div>
+    {error&&<p role="alert" style={{color:"#b91c1c",background:"#fef2f2",padding:12,borderRadius:8,fontWeight:700}}>{error}</p>}
     {loading?<p>กำลังโหลด...</p>:visible.length===0?<p>ไม่มีรายการในสถานะนี้</p>:visible.map(row=>{
-      const d=drafts[row.id]||parse(row.message_text||"");const test=/ทดสอบ\s*\d*/i.test(row.message_text||"");const url=row.storage_path?media[row.storage_path]:null;const canAnalyze=!test&&row.status==="pending"&&(row.message_type==="text"||row.mime_type?.startsWith("image/"));
+      const d=drafts[row.id]||parse(row.linked_note||row.message_text||"");const test=/ทดสอบ\s*\d*/i.test(row.message_text||"");const url=row.storage_path?media[row.storage_path]:null;const canAnalyze=!test&&row.status==="pending"&&row.mime_type?.startsWith("image/");
       return <section key={row.id} style={{background:"white",border:"1px solid #e5e7eb",borderRadius:12,padding:16,marginBottom:12,boxShadow:"0 1px 2px rgba(0,0,0,.04)"}}>
-        <div style={{display:"flex",justifyContent:"space-between",gap:8,flexWrap:"wrap"}}><strong>{row.message_type==="text"?"ข้อความ LINE":"หลักฐาน "+row.message_type}</strong><span>{row.status}{row.analyzed_at?" · AI วิเคราะห์แล้ว":""}</span></div>
-        <p style={{whiteSpace:"pre-wrap",overflowWrap:"anywhere"}}>{row.message_text||"ไฟล์แนบจาก LINE"}</p>
+        <div style={{display:"flex",justifyContent:"space-between",gap:8,flexWrap:"wrap"}}><strong>{row.message_type==="text"?"ข้อความ LINE":"สลิป / หลักฐานจาก LINE"}</strong><span>{row.status}{row.analyzed_at?" · AI วิเคราะห์แล้ว":""}</span></div>
+        {row.linked_note&&<p style={{background:"#f3f4f6",padding:10,borderRadius:8}}><b>คำอธิบายจาก LINE:</b> {row.linked_note}</p>}
+        {row.message_text&&<p style={{whiteSpace:"pre-wrap",overflowWrap:"anywhere"}}>{row.message_text}</p>}
         {url&&row.mime_type?.startsWith("image/")&&<a href={url} target="_blank" rel="noreferrer"><img src={url} alt="หลักฐานจาก LINE" style={{maxWidth:360,width:"100%",maxHeight:420,objectFit:"contain",borderRadius:8,border:"1px solid #e5e7eb"}}/></a>}
         {url&&row.mime_type==="application/pdf"&&<p><a href={url} target="_blank" rel="noreferrer">เปิดไฟล์ PDF หลักฐาน</a></p>}
         <div><small>{new Date(row.event_at||row.created_at).toLocaleString("th-TH",{timeZone:"Asia/Bangkok"})}</small></div>
         {test&&<p style={{color:"#b45309",fontWeight:700}}>ข้อความทดสอบ — ระบบล็อกไม่ให้บันทึกเป็นเงินจริง</p>}
         {row.status==="pending"&&<>
-          <div style={{display:"flex",gap:8,marginTop:12,flexWrap:"wrap"}}>{canAnalyze&&<button onClick={()=>analyze(row)} disabled={analyzing===row.id} style={{padding:"9px 14px",background:"#111827",color:"white",border:0,borderRadius:7}}>{analyzing===row.id?"กำลังวิเคราะห์...":row.analyzed_at?"วิเคราะห์ใหม่ด้วย AI":"วิเคราะห์ด้วย AI"}</button>}{row.ai_confidence!=null&&<span style={{padding:"9px 0",color:"#6b7280"}}>ความมั่นใจ AI {Math.round(Number(row.ai_confidence)*100)}%</span>}</div>
+          <div style={{display:"flex",gap:8,marginTop:12,flexWrap:"wrap"}}>{canAnalyze&&<button onClick={()=>analyze(row)} disabled={analyzing===row.id} style={{padding:"9px 14px",background:"#111827",color:"white",border:0,borderRadius:7}}>{analyzing===row.id?"กำลังอ่านสลิป...":row.analyzed_at?"อ่านสลิปใหม่ด้วย AI":"อ่านสลิปด้วย AI"}</button>}{row.ai_confidence!=null&&<span style={{padding:"9px 0",color:"#6b7280"}}>ความมั่นใจ AI {Math.round(Number(row.ai_confidence)*100)}%</span>}</div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:10,marginTop:12}}>
             <label>ประเภท<select style={input} value={d.direction} onChange={e=>change(row.id,"direction",e.target.value)}><option value="">เลือกประเภท</option><option value="income">รายรับ</option><option value="expense">รายจ่าย</option></select></label>
             <label>จำนวนเงิน<input style={input} type="number" min="0.01" step="0.01" value={d.amount} onChange={e=>change(row.id,"amount",e.target.value)}/></label>
