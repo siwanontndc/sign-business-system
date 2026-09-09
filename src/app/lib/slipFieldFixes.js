@@ -7,51 +7,34 @@ function monthToken(s){const raw=clean(s).toLowerCase().replace(/[\s.·,]/g,'');
 export function extractThaiSlipDate(text=''){const s=clean(text);let m;const numeric=/([0-9OoIl|]{1,2})\s*[\/\-.]\s*([0-9OoIl|]{1,2})\s*[\/\-.]\s*([0-9OoIl|]{2,4})(?!\d)/gi;while((m=numeric.exec(s))){const v=formatDate(m[1],m[2],m[3]);if(v)return v;}const named=/([0-9OoIl|]{1,2})\s*([ก-๙.\s]{1,22}?)\s*([0-9OoIl|]{4})(?!\d)/gi;while((m=named.exec(s))){const month=monthToken(m[2]);if(month){const v=formatDate(m[1],month,m[3]);if(v)return v;}}return'';}
 
 const normalize=s=>clean(s).toLowerCase().replace(/[^a-z0-9ก-๙]/g,'');
-const accountDigits=s=>clean(s).replace(/[^0-9]/g,'');
-const OWN_ACCOUNT_ENDINGS=['4034'];
 function own(s){
- const n=normalize(s),a=accountDigits(s);
- const thanee=n.includes('ธานี')&&(n.includes('แอดเวอร์')||n.includes('แอดเวอ')||n.includes('ไทซิ่ง')||n.includes('advertis'));
+ const n=normalize(s);
+ const thanee=n.includes('ธานี')&&(n.includes('แอดเวอร์')||n.includes('แอดเวอ')||n.includes('แอด')||n.includes('ไทซิ่ง')||n.includes('ไทซ')||n.includes('advertis'));
  const owner=n.includes('ศิวนนท์')||n.includes('ศค้วนนท์')||n.includes('ศุภฐิติ')||n.includes('ศุภฐติ');
- const acct=OWN_ACCOUNT_ENDINGS.some(x=>a.endsWith(x));
- return thanee||owner||acct;
+ return thanee||owner;
 }
-const sender=/^(?:จาก|ผู้โอน|บัญชีผู้โอน|from|sender)(?:\s|:|：|$)/i;
-const recipient=/^(?:ไปยัง|ผู้รับ|บัญชีผู้รับ|to|recipient)(?:\s|:|：|$)/i;
+const sender=/^(?:จาก|จา[กค]|วาก|ผู้โอน|บัญชีผู้โอน|from|sender)(?:\s|:|：|$)/i;
+const recipient=/^(?:ไปยัง|ไปยั[งง]|ผู้รับ|บัญชีผู้รับ|to|recipient)(?:\s|:|：|$)/i;
 const stop=/^(?:จำนวนเงิน|ยอดเงิน|ยอดโอน|ยอดชำระ|ค่าธรรมเนียม|วันที่|วันท|เวลา|บันทึกช่วยจำ|หมายเหตุ|เลขอ้างอิง|รหัสอ้างอิง|reference|transaction|amount|total|fee|date|time|note|memo)(?:\s|:|：|$)/i;
 function labelOf(line){return clean(line).replace(/^[^ก-๙A-Za-z]*/,'').trim();}
 
-function directionalEvidence(text=''){
- const lines=clean(text).split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
- let mode='',fromScore=0,toScore=0;
- for(let i=0;i<lines.length;i++){
-  const l=labelOf(lines[i]);
-  if(sender.test(l)){mode='from';continue;}
-  if(recipient.test(l)){mode='to';continue;}
-  if(stop.test(l)){mode='';continue;}
-  if(!mode)continue;
-  const window=[lines[i],lines[i+1]||'',lines[i+2]||''].join(' ');
-  if(own(window)){
-   if(mode==='from')fromScore+=3;
-   if(mode==='to')toScore+=3;
+function classifyOwnLine(lines,i){
+  // 1) Prefer the nearest explicit section marker above the account/name.
+  for(let j=i-1;j>=Math.max(0,i-8);j--){
+    const l=labelOf(lines[j]);
+    if(stop.test(l))break;
+    if(recipient.test(l))return'income';
+    if(sender.test(l))return'expense';
   }
- }
- return{fromScore,toScore};
-}
-
-function directContextEvidence(text=''){
- const lines=clean(text).split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
- let fromScore=0,toScore=0;
- for(let i=0;i<lines.length;i++){
-  if(!own(lines[i]))continue;
-  const prev=lines.slice(Math.max(0,i-5),i).map(labelOf);
-  for(let j=prev.length-1;j>=0;j--){
-   if(recipient.test(prev[j])){toScore+=2;break;}
-   if(sender.test(prev[j])){fromScore+=2;break;}
-   if(stop.test(prev[j]))break;
+  // 2) Krungthai-style slips always put sender before the "ไปยัง" marker.
+  // This fallback handles OCR that misreads "จาก" but still reads "ไปยัง" correctly.
+  for(let j=i+1;j<=Math.min(lines.length-1,i+8);j++){
+    const l=labelOf(lines[j]);
+    if(stop.test(l))break;
+    if(recipient.test(l))return'expense';
+    if(sender.test(l))break;
   }
- }
- return{fromScore,toScore};
+  return'';
 }
 
 export function extractSlipParties(text=''){
@@ -62,9 +45,18 @@ export function extractSlipParties(text=''){
 }
 
 export function inferSlipDirection(text=''){
- const a=directionalEvidence(text),b=directContextEvidence(text);
- const from=a.fromScore+b.fromScore,to=a.toScore+b.toScore;
- if(from>to&&from>0)return'expense';
- if(to>from&&to>0)return'income';
+ const lines=clean(text).split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
+ let expense=0,income=0;
+ for(let i=0;i<lines.length;i++){
+   if(!own(lines[i]))continue;
+   const d=classifyOwnLine(lines,i);
+   if(d==='expense')expense++;
+   if(d==='income')income++;
+ }
+ if(expense>income&&expense>0)return'expense';
+ if(income>expense&&income>0)return'income';
+ // Final safe fallback: if every recognized occurrence agrees, use it; otherwise do not guess.
+ if(expense>0&&income===0)return'expense';
+ if(income>0&&expense===0)return'income';
  return'';
 }
