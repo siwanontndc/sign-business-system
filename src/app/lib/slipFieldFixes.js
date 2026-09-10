@@ -86,6 +86,14 @@ function sections(text=''){
 }
 function isKrungthai(text){const n=normalize(text);return n.includes('กรุงไทย')||n.includes('krungthai');}
 function isKbank(text){const n=normalize(text);return n.includes('กสิกรไทย')||n.includes('kplus')||n.includes('kbank')||n.includes('kasikorn');}
+
+const knownExpensePayee=/(stripe\s*payments|stripepayments|การไฟฟ้า|pea\b|metropolitan\s+electricity|การประปา|ประปา|true\s*move|truemove|true\s*corporation|โตโยต้าลีสซิ่ง|toyota\s*leasing|ค่างวด|ค่าไฟ|ไฟหลังร้าน|ค่าโทรศัพท์|ค่าเน็ต|อินเทอร์เน็ต|ค่าน้ำ|ค่าน้ำมัน)/i;
+function knownExpenseDirection(text=''){
+  const s=clean(text);
+  if(!own(s))return'';
+  if(knownExpensePayee.test(s))return'expense';
+  return'';
+}
 function krungthaiBillExpense(text=''){
   if(!isKrungthai(text)||!own(text))return false;
   const n=normalize(text);
@@ -120,8 +128,9 @@ function explicitDirection(text=''){
   return'';
 }
 function onePassEvidence(text=''){
-  const explicit=explicitDirection(text);if(explicit)return{direction:explicit,strength:120};
-  if(krungthaiBillExpense(text))return{direction:'expense',strength:115};
+  const explicit=explicitDirection(text);if(explicit)return{direction:explicit,strength:130};
+  const known=knownExpenseDirection(text);if(known)return{direction:known,strength:125};
+  if(krungthaiBillExpense(text))return{direction:'expense',strength:120};
   const kb=kbankOrderDirection(text);if(kb)return{direction:kb,strength:100};
   return{direction:'',strength:0};
 }
