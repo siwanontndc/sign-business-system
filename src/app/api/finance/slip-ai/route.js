@@ -23,13 +23,25 @@ function fieldConf(j,field,overall){
   const c=j?.confidence_by_field?.[field];
   return c==null?overall:conf(c);
 }
+async function callOpenAI(body){
+  const r=await fetch('https://api.openai.com/v1/responses',{method:'POST',headers:{Authorization:`Bearer ${process.env.OPENAI_API_KEY}`,'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const data=await r.json().catch(()=>({}));
+  return{r,data};
+}
 
-export async function GET(){
-  return Response.json({
-    ok:true,
-    configured:Boolean(process.env.OPENAI_API_KEY),
-    model:MODEL()
-  },{headers:{'Cache-Control':'no-store'}});
+export async function GET(req){
+  const configured=Boolean(process.env.OPENAI_API_KEY);
+  const url=new URL(req.url);
+  const live=url.searchParams.get('live')==='1';
+  if(!live)return Response.json({ok:true,configured,model:MODEL()},{headers:{'Cache-Control':'no-store'}});
+  if(!configured)return Response.json({ok:false,configured:false,model:MODEL(),error:'AI_NOT_CONFIGURED',detail:'OPENAI_API_KEY is missing'},{status:503,headers:{'Cache-Control':'no-store'}});
+  try{
+    const{r,data}=await callOpenAI({model:MODEL(),store:false,input:'Reply with only OK.',max_output_tokens:16});
+    if(!r.ok)return Response.json({ok:false,configured:true,model:MODEL(),error:'AI_REQUEST_FAILED',status:r.status,code:data?.error?.code||'',detail:data?.error?.message||'OpenAI request failed'},{status:502,headers:{'Cache-Control':'no-store'}});
+    return Response.json({ok:true,configured:true,live:true,model:MODEL(),status:r.status},{headers:{'Cache-Control':'no-store'}});
+  }catch(e){
+    return Response.json({ok:false,configured:true,model:MODEL(),error:'AI_NETWORK_ERROR',detail:e?.message||'OpenAI health check failed'},{status:502,headers:{'Cache-Control':'no-store'}});
+  }
 }
 
 export async function POST(req){
@@ -86,8 +98,7 @@ ${localText}`;
       text:{format:{type:'json_object'}},
       max_output_tokens:1000
     };
-    const r=await fetch('https://api.openai.com/v1/responses',{method:'POST',headers:{Authorization:`Bearer ${process.env.OPENAI_API_KEY}`,'Content-Type':'application/json'},body:JSON.stringify(body)});
-    const data=await r.json().catch(()=>({}));
+    const{r,data}=await callOpenAI(body);
     if(!r.ok){
       console.error('slip-ai OpenAI error',r.status,data?.error?.code,data?.error?.message);
       return Response.json({ok:false,error:'AI_REQUEST_FAILED',status:r.status,detail:data?.error?.message||'OpenAI request failed',code:data?.error?.code||''},{status:502});
