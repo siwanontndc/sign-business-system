@@ -48,7 +48,7 @@ export default function FinanceSystemCheck(){
     <div style={{maxWidth:760,margin:"auto"}}>
       <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"center",flexWrap:"wrap",marginBottom:14}}>
         <div><h1 style={{margin:"0 0 5px",fontSize:28}}>🩺 ตรวจระบบการเงิน</h1><div style={{color:"#64748b"}}>เช็กฐานข้อมูล Storage และ AI ก่อนใช้งานจริง</div></div>
-        <button disabled={loading} onClick={run} style={{...btn,background:"#111827",color:"white",opacity:loading?.65:1}}>{loading?"กำลังตรวจ...":"ตรวจใหม่"}</button>
+        <button disabled={loading} onClick={run} style={{...btn,background:"#111827",color:"white",opacity:loading?0.65:1}}>{loading?"กำลังตรวจ...":"ตรวจใหม่"}</button>
       </div>
       <section style={box}>
         <Row label="Supabase Database" {...checks.supabase}/>
