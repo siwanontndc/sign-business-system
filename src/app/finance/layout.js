@@ -6,6 +6,7 @@ export default function FinanceLayout({children}){
       <Link href="/finance" style={link}>การเงิน</Link>
       <Link href="/finance/line" style={link}>💬 บัญชีจาก LINE</Link>
       <Link href="/finance/reports" style={link}>📊 รายงาน</Link>
+      <Link href="/finance/system-check" style={link}>🩺 ตรวจระบบ</Link>
       <Link href="/" style={{...link,marginLeft:"auto"}}>หน้าหลัก</Link>
     </nav>
     {children}
