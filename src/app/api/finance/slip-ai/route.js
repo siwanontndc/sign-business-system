@@ -4,6 +4,7 @@ const ALLOWED_CATEGORIES={
   income:['รายได้งานป้าย','เงินมัดจำ','โอนจากลูกค้า','เงินสดรับ','อื่น ๆ'],
   expense:['ค่าวัสดุ','ค่าแรง','ค่าน้ำมัน/เดินทาง','ค่าเครื่องมือ','ค่าใช้จ่ายสำนักงาน','ภาษี/ค่าธรรมเนียม','ค่าเช่า','ค่าโฆษณา/การตลาด','ค่าสาธารณูปโภค','ค่าโทรศัพท์/อินเทอร์เน็ต','ค่างวด/ยานพาหนะ','อื่น ๆ']
 };
+const MODEL=()=>process.env.OPENAI_VISION_MODEL||'gpt-5.6-luna';
 
 function safeJson(text=''){
   try{return JSON.parse(text);}catch{}
@@ -17,6 +18,19 @@ function normalizeDate(v=''){
 function normalizeAmount(v){const n=Number(String(v??'').replace(/,/g,''));return Number.isFinite(n)&&n>0&&n<100000000?String(n):'';}
 function normalizeDirection(v){return v==='income'||v==='expense'?v:'';}
 function normalizeCategory(v,dir){const list=ALLOWED_CATEGORIES[dir]||[];return list.includes(v)?v:'';}
+function conf(v){return Math.max(0,Math.min(1,Number(v)||0));}
+function fieldConf(j,field,overall){
+  const c=j?.confidence_by_field?.[field];
+  return c==null?overall:conf(c);
+}
+
+export async function GET(){
+  return Response.json({
+    ok:true,
+    configured:Boolean(process.env.OPENAI_API_KEY),
+    model:MODEL()
+  },{headers:{'Cache-Control':'no-store'}});
+}
 
 export async function POST(req){
   try{
@@ -30,13 +44,47 @@ export async function POST(req){
     if(!mime.startsWith('image/'))return Response.json({ok:false,error:'INVALID_IMAGE'},{status:400});
     const b64=Buffer.from(await file.arrayBuffer()).toString('base64');
     const dataUrl=`data:${mime};base64,${b64}`;
-    const prompt=`อ่านข้อความจากสลิปธนาคาร/หลักฐานการชำระเงินภาษาไทยในภาพนี้อย่างระมัดระวัง และคืน JSON เท่านั้น\n\nบัญชีของบริษัทเราอาจแสดงชื่อ ธานีแอดเวอร์ไทซิ่ง / ศิวนนท์ หรือเลขบัญชีปิดท้าย 4034, 1403, 8829\n- ถ้าบริษัทเราเป็นผู้โอน/ผู้จ่าย => direction = expense\n- ถ้าบริษัทเราเป็นผู้รับ => direction = income\n- ถ้าเป็นจ่ายบิล เช่น การไฟฟ้า True Toyota merchant/customer/ref bill => expense\n- amount ต้องเป็นจำนวนเงินทำรายการหลัก ไม่ใช่ค่าธรรมเนียม ยอดค้าง หรือเลขอ้างอิง\n- transaction_date ใช้วันที่ทำรายการบนสลิปจริง รูปแบบ YYYY-MM-DD ค.ศ. (พ.ศ. ลบ 543)\n- counterparty คือบุคคล/บริษัทอีกฝั่งของธุรกรรม ไม่ใช่บริษัทเรา\n- description ใช้บันทึกช่วยจำ/หมายเหตุบนสลิป เช่น ค่าไฟร้าน ไฟหลังร้าน ท่อ ค่างวดรถ ถ้ามี\n- category เลือกจากรายการเท่านั้น\nรายรับ: รายได้งานป้าย, เงินมัดจำ, โอนจากลูกค้า, เงินสดรับ, อื่น ๆ\nรายจ่าย: ค่าวัสดุ, ค่าแรง, ค่าน้ำมัน/เดินทาง, ค่าเครื่องมือ, ค่าใช้จ่ายสำนักงาน, ภาษี/ค่าธรรมเนียม, ค่าเช่า, ค่าโฆษณา/การตลาด, ค่าสาธารณูปโภค, ค่าโทรศัพท์/อินเทอร์เน็ต, ค่างวด/ยานพาหนะ, อื่น ๆ\n- ค่าไฟ/ประปา => ค่าสาธารณูปโภค; โทรศัพท์/อินเทอร์เน็ต/True => ค่าโทรศัพท์/อินเทอร์เน็ต; Toyota/ค่างวดรถ => ค่างวด/ยานพาหนะ\n- ถ้าไม่แน่ใจห้ามเดา ให้คืน string ว่างและ confidence ต่ำ\n\nJSON fields: direction, amount, transaction_date, counterparty, bank_name, reference_no, description, category, confidence, evidence\nOCR เดิมจากเครื่อง (อาจผิด ใช้เป็นข้อมูลประกอบเท่านั้น):\n${localText}`;
+    const prompt=`อ่านข้อความจากสลิปธนาคาร/หลักฐานการชำระเงินภาษาไทยในภาพนี้โดยดูจากภาพเป็นหลัก ห้ามเดาจาก OCR ที่ผิด และคืน JSON เท่านั้น
+
+บัญชีของบริษัทเราอาจแสดงชื่อ ธานีแอดเวอร์ไทซิ่ง / ศิวนนท์ หรือเลขบัญชีปิดท้าย 4034, 1403, 8829
+- ถ้าบริษัทเราเป็นผู้โอน/ผู้จ่าย => direction = expense
+- ถ้าบริษัทเราเป็นผู้รับ => direction = income
+- ห้ามสรุป direction จากจำนวนเงิน วันที่ หรือเลขอ้างอิงเพียงอย่างเดียว
+- ถ้าเป็นจ่ายบิล เช่น การไฟฟ้า True Toyota Stripe merchant/customer/ref bill และบัญชีเราเป็นผู้จ่าย => expense
+- amount ต้องเป็นจำนวนเงินทำรายการหลัก ไม่ใช่ค่าธรรมเนียม ยอดค้าง เลขบัญชี หรือเลขอ้างอิง
+- transaction_date ใช้วันที่ทำรายการบนสลิปจริง รูปแบบ YYYY-MM-DD ค.ศ. (พ.ศ. ลบ 543)
+- counterparty คือบุคคล/บริษัทอีกฝั่งของธุรกรรม ไม่ใช่บริษัทเรา
+- description ใช้บันทึกช่วยจำ/หมายเหตุบนสลิปถ้ามี
+- category เลือกจากรายการเท่านั้น
+รายรับ: รายได้งานป้าย, เงินมัดจำ, โอนจากลูกค้า, เงินสดรับ, อื่น ๆ
+รายจ่าย: ค่าวัสดุ, ค่าแรง, ค่าน้ำมัน/เดินทาง, ค่าเครื่องมือ, ค่าใช้จ่ายสำนักงาน, ภาษี/ค่าธรรมเนียม, ค่าเช่า, ค่าโฆษณา/การตลาด, ค่าสาธารณูปโภค, ค่าโทรศัพท์/อินเทอร์เน็ต, ค่างวด/ยานพาหนะ, อื่น ๆ
+- ค่าไฟ/ประปา => ค่าสาธารณูปโภค; โทรศัพท์/อินเทอร์เน็ต/True => ค่าโทรศัพท์/อินเทอร์เน็ต; Toyota/ค่างวดรถ => ค่างวด/ยานพาหนะ
+- ถ้าไม่แน่ใจ field ไหน ให้ field นั้นเป็น string ว่างและให้ confidence ต่ำ ห้ามเดา
+- evidence ให้สรุปสั้น ๆ ว่าเห็นผู้โอน/ผู้รับ/จำนวนเงิน/วันที่อะไรจากภาพ
+
+JSON fields:
+{
+  "direction":"income|expense|",
+  "amount":"",
+  "transaction_date":"YYYY-MM-DD|",
+  "counterparty":"",
+  "bank_name":"",
+  "reference_no":"",
+  "description":"",
+  "category":"",
+  "confidence":0.0,
+  "confidence_by_field":{"direction":0.0,"amount":0.0,"transaction_date":0.0,"counterparty":0.0,"bank_name":0.0,"reference_no":0.0,"description":0.0,"category":0.0},
+  "evidence":""
+}
+
+OCR เดิมจากเครื่อง (ถ้ามี อาจผิด ใช้เป็นข้อมูลประกอบเท่านั้น):
+${localText}`;
     const body={
-      model:process.env.OPENAI_VISION_MODEL||'gpt-5.6-luna',
+      model:MODEL(),
       store:false,
       input:[{role:'user',content:[{type:'input_text',text:prompt},{type:'input_image',image_url:dataUrl,detail:'high'}]}],
       text:{format:{type:'json_object'}},
-      max_output_tokens:900
+      max_output_tokens:1000
     };
     const r=await fetch('https://api.openai.com/v1/responses',{method:'POST',headers:{Authorization:`Bearer ${process.env.OPENAI_API_KEY}`,'Content-Type':'application/json'},body:JSON.stringify(body)});
     const data=await r.json().catch(()=>({}));
@@ -48,6 +96,7 @@ export async function POST(req){
     const j=safeJson(text);
     if(!j)return Response.json({ok:false,error:'AI_INVALID_JSON',detail:'AI returned invalid JSON'},{status:502});
     const direction=normalizeDirection(j.direction);
+    const overall=conf(j.confidence);
     const out={
       direction,
       amount:normalizeAmount(j.amount),
@@ -57,7 +106,17 @@ export async function POST(req){
       reference_no:String(j.reference_no||'').trim().slice(0,120),
       description:String(j.description||'').trim().slice(0,240),
       category:normalizeCategory(String(j.category||'').trim(),direction),
-      confidence:Math.max(0,Math.min(1,Number(j.confidence)||0)),
+      confidence:overall,
+      confidence_by_field:{
+        direction:fieldConf(j,'direction',overall),
+        amount:fieldConf(j,'amount',overall),
+        transaction_date:fieldConf(j,'transaction_date',overall),
+        counterparty:fieldConf(j,'counterparty',overall),
+        bank_name:fieldConf(j,'bank_name',overall),
+        reference_no:fieldConf(j,'reference_no',overall),
+        description:fieldConf(j,'description',overall),
+        category:fieldConf(j,'category',overall)
+      },
       evidence:String(j.evidence||'').trim().slice(0,500)
     };
     return Response.json({ok:true,model:body.model,fields:out});
