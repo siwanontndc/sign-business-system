@@ -40,7 +40,7 @@ function categoryForDirection(old,dir){
 function validCategory(v,dir){return dir==="income"?INCOME.includes(v):dir==="expense"?EXPENSE.includes(v):false;}
 
 export default function LineFinancePage(){
-  const[rows,setRows]=useState([]),[drafts,setDrafts]=useState({}),[media,setMedia]=useState({}),[loading,setLoading]=useState(true),[busy,setBusy]=useState(false),[reading,setReading]=useState(null),[progress,setProgress]=useState(0),[error,setError]=useState(""),[filter,setFilter]=useState("pending"),[raw,setRaw]=useState({}),[notice,setNotice]=useState({});
+  const[rows,setRows]=useState([]),[drafts,setDrafts]=useState({}),[media,setMedia]=useState({}),[loading,setLoading]=useState(true),[busy,setBusy]=useState(false),[reading,setReading]=useState(null),[progress,setProgress]=useState(0),[error,setError]=useState(""),[filter,setFilter]=useState("pending"),[raw,setRaw]=useState({}),[notice,setNotice]=useState({}),[duplicates,setDuplicates]=useState({});
 
   async function load(){
     setLoading(true);setError("");
@@ -58,6 +58,37 @@ export default function LineFinancePage(){
     setDrafts(p=>({...p,[id]:{...p[id],[key]:value,...(key==="direction"?{category:categoryForDirection(p[id]?.category||"",value)}:{})}}));
   }
 
+  async function checkDuplicate(r,draftOverride=null){
+    const d=draftOverride||drafts[r.id]||initial(r);
+    if(!d.direction||!goodAmount(d.amount)||!d.transaction_date){
+      setDuplicates(p=>({...p,[r.id]:null}));
+      return null;
+    }
+    const start=new Date(d.transaction_date+"T00:00:00+07:00").toISOString();
+    const end=new Date(d.transaction_date+"T23:59:59.999+07:00").toISOString();
+    let q=supabase.from("finance_transactions")
+      .select("id,transaction_date,direction,amount,reference_no,counterparty,line_message_id,description")
+      .eq("direction",d.direction)
+      .eq("amount",Number(d.amount))
+      .gte("transaction_date",start)
+      .lte("transaction_date",end)
+      .limit(10);
+    const{data,error:e}=await q;
+    if(e){setDuplicates(p=>({...p,[r.id]:null}));return null;}
+    const ref=String(d.reference_no||"").trim().toLowerCase();
+    const same=(data||[]).filter(x=>{
+      if(r.line_message_id&&x.line_message_id===r.line_message_id)return true;
+      const xr=String(x.reference_no||"").trim().toLowerCase();
+      if(ref&&xr&&ref===xr)return true;
+      const cp=String(d.counterparty||"").trim().toLowerCase();
+      const xcp=String(x.counterparty||"").trim().toLowerCase();
+      return !ref&&cp&&xcp&&cp===xcp;
+    });
+    const hit=same[0]||null;
+    setDuplicates(p=>({...p,[r.id]:hit}));
+    return hit;
+  }
+
   async function analyze(r){
     setReading(r.id);setProgress(0);setError("");
     try{
@@ -65,11 +96,12 @@ export default function LineFinancePage(){
       const{data,error:e}=await supabase.storage.from("line-account").download(r.storage_path);if(e)throw e;
       const result=await readSlipLocally(data,p=>setProgress(p));
       setRaw(p=>({...p,[r.id]:result.text}));
+      let nextDraft=null;
       setDrafts(p=>{
         const old=p[r.id]||initial(r),f=result.fields;
         const direction=f.direction||old.direction||"";
         const category=validCategory(f.category,direction)?f.category:categoryForDirection(old.category,direction);
-        return{...p,[r.id]:{
+        nextDraft={
           ...old,
           direction,
           amount:goodAmount(f.amount)?String(f.amount):old.amount,
@@ -80,8 +112,10 @@ export default function LineFinancePage(){
           reference_no:f.reference_no||old.reference_no,
           description:f.description||old.description,
           ai_confidence:Number.isFinite(Number(f.confidence))?Number(f.confidence):null
-        }};
+        };
+        return{...p,[r.id]:nextDraft};
       });
+      setTimeout(()=>checkDuplicate(r,nextDraft),0);
       const f=result.fields,missing=[];
       if(!f.direction)missing.push("ประเภท");
       if(!goodAmount(f.amount))missing.push("จำนวนเงิน");
@@ -96,6 +130,7 @@ export default function LineFinancePage(){
   async function review(r,action){
     const d=drafts[r.id]||{};
     if(action==="approve"&&(!d.direction||!goodAmount(d.amount)||!d.transaction_date)){setError("กรุณาตรวจสอบ ประเภท จำนวนเงิน และวันที่ทำรายการให้ครบก่อนบันทึก");return;}
+    if(action==="approve"){const dup=await checkDuplicate(r,d);if(dup){setError("⚠️ พบรายการซ้ำ: รายการนี้ตรงกับรายการที่บันทึกแล้ว ระบบจะไม่อนุญาตให้บันทึกซ้ำ");return;}}
     if(!confirm(action==="approve"?"ยืนยันว่าตรวจสอบข้อมูลบนสลิปแล้ว และบันทึกรายการเงินจริง?":"ปฏิเสธรายการนี้?"))return;
     setBusy(true);setError("");
     const{error:e}=await supabase.rpc("review_line_account_entry_v2",{p_id:r.id,p_action:action,p_direction:d.direction||null,p_amount:d.amount===""?null:Number(d.amount),p_category:d.category||null,p_description:d.description||null,p_project_name:d.project_name||null,p_transaction_date:d.transaction_date?new Date(d.transaction_date+"T12:00:00+07:00").toISOString():null,p_counterparty:d.counterparty||null,p_bank_name:d.bank_name||null,p_reference_no:d.reference_no||null,p_ai_confidence:d.ai_confidence==null?null:Number(d.ai_confidence)});
@@ -155,7 +190,7 @@ export default function LineFinancePage(){
           <div style={{minWidth:0}}>{r.storage_path&&media[r.storage_path]&&r.mime_type?.startsWith("image/")?<img src={media[r.storage_path]} alt="สลิปจาก LINE" style={{width:"100%",maxHeight:520,objectFit:"contain",borderRadius:10,background:"#f9fafb"}}/>:<div style={{padding:20,background:"#f9fafb",borderRadius:10}}>ไม่มีรูปสลิป</div>}{r.linked_note&&<p style={{fontSize:13,overflowWrap:"anywhere"}}><b>คำอธิบาย:</b> {r.linked_note}</p>}</div>
           <div style={{minWidth:0}}>{r.status==="pending"?<>
             <button disabled={!!reading||!r.storage_path||!r.mime_type?.startsWith("image/")} onClick={()=>analyze(r)} style={{...btn,background:"#0f172a",color:"white",border:0,width:"100%"}}>{reading===r.id?`กำลังอ่าน ${progress}%`:"อ่านสลิปด้วย OCR + AI"}</button>
-            {notice[r.id]&&<div style={{marginTop:8,padding:10,borderRadius:9,background:notice[r.id].includes("ยังไม่")?"#fff7ed":"#ecfdf5",color:notice[r.id].includes("ยังไม่")?"#9a3412":"#166534",fontSize:13}}>{notice[r.id]}</div>}
+            {notice[r.id]&&<div style={{marginTop:8,padding:10,borderRadius:9,background:notice[r.id].includes("ยังไม่")?"#fff7ed":"#ecfdf5",color:notice[r.id].includes("ยังไม่")?"#9a3412":"#166534",fontSize:13}}>{notice[r.id]}</div>}{duplicates[r.id]&&<div style={{marginTop:8,padding:12,borderRadius:10,background:"#fef2f2",border:"2px solid #ef4444",color:"#991b1b",fontWeight:800}}>⚠️ รายการซ้ำ — พบรายการที่บันทึกแล้ว {Number(duplicates[r.id].amount||0).toLocaleString("th-TH",{minimumFractionDigits:2})} บาท วันที่ {new Date(duplicates[r.id].transaction_date).toLocaleDateString("th-TH",{timeZone:"Asia/Bangkok"})}{duplicates[r.id].reference_no?` • Ref: ${duplicates[r.id].reference_no}`:""}<div style={{fontSize:12,fontWeight:600,marginTop:4}}>ระบบปิดการบันทึกซ้ำอัตโนมัติ</div></div>}
             {raw[r.id]&&<details style={{marginTop:8}}><summary>ดูข้อความที่ OCR อ่านได้</summary><pre style={{whiteSpace:"pre-wrap",overflowWrap:"anywhere",fontSize:12,background:"#f8fafc",padding:10,borderRadius:8}}>{raw[r.id]}</pre></details>}
             <div className="lf-form-grid" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,220px),1fr))",gap:10,marginTop:12}}>
               <label style={{fontWeight:700,minWidth:0}}>ประเภท<div className="lf-direction-buttons" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:5}}><button type="button" onClick={()=>change(r.id,"direction","income")} style={{...btn,border:d.direction==="income"?"2px solid #0b6cff":"1px solid #d1d5db",background:d.direction==="income"?"#0b6cff":"white",color:d.direction==="income"?"white":"#111827"}}>↑ รายรับ</button><button type="button" onClick={()=>change(r.id,"direction","expense")} style={{...btn,border:d.direction==="expense"?"2px solid #e11d48":"1px solid #d1d5db",background:d.direction==="expense"?"#e11d48":"white",color:d.direction==="expense"?"white":"#111827"}}>↓ รายจ่าย</button></div></label>
@@ -168,7 +203,7 @@ export default function LineFinancePage(){
               <label style={{minWidth:0}}>เลขอ้างอิง<input style={{...input,marginTop:5}} value={d.reference_no||""} onChange={e=>change(r.id,"reference_no",e.target.value)}/></label>
               <label style={{gridColumn:"1/-1",minWidth:0}}>รายละเอียด<input style={{...input,marginTop:5}} value={d.description||""} onChange={e=>change(r.id,"description",e.target.value)}/></label>
             </div>
-            <div className="lf-actions" style={{display:"flex",gap:8,marginTop:12,flexWrap:"wrap"}}><button disabled={busy||!known||!goodAmount(d.amount)||!d.transaction_date} onClick={()=>review(r,"approve")} style={{...btn,border:0,background:known?"#16a34a":"#94a3b8",color:"white",flex:"1 1 180px"}}>ยืนยันและบันทึก</button><button disabled={busy} onClick={()=>review(r,"reject")} style={{...btn,border:"1px solid #d1d5db",background:"white",flex:"1 1 120px"}}>ปฏิเสธ</button></div>
+            <div className="lf-actions" style={{display:"flex",gap:8,marginTop:12,flexWrap:"wrap"}}><button disabled={busy||!known||!goodAmount(d.amount)||!d.transaction_date||!!duplicates[r.id]} onClick={()=>review(r,"approve")} style={{...btn,border:0,background:known?"#16a34a":"#94a3b8",color:"white",flex:"1 1 180px"}}>ยืนยันและบันทึก</button><button disabled={busy} onClick={()=>review(r,"reject")} style={{...btn,border:"1px solid #d1d5db",background:"white",flex:"1 1 120px"}}>ปฏิเสธ</button></div>
           </>:<div style={{padding:12,background:"#f8fafc",borderRadius:10}}>รายการนี้ตรวจสอบแล้ว</div>}</div>
         </div>
       </section>;
