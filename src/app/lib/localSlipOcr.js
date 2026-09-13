@@ -138,12 +138,24 @@ export async function readSlipLocally(file,onProgress=()=>{}){
   if(file.size>15*1024*1024)throw new Error('รูปภาพต้องไม่เกิน 15 MB');
   onProgress(5);
   const text=await runOcr(file,onProgress);
-  onProgress(96);
-  const fields=parseSlipText(text);
-  fields.ai_source='ocr-local';
-  fields.ai_error='';
-  fields.ai_status=0;
-  fields.ai_code='';
+  onProgress(90);
+  const local=parseSlipText(text);
+  const ai=await aiParse(file,text);
+  let fields=local;
+  if(ai.fields){
+    fields=merge(local,ai.fields);
+    fields.ai_source='openai-vision+ocr';
+    fields.ai_error='';
+    fields.ai_status=ai.status||200;
+    fields.ai_code='';
+    fields.ai_model=ai.model||'';
+  }else{
+    fields.ai_source='ocr-fallback';
+    fields.ai_error=ai.error||'';
+    fields.ai_detail=ai.detail||'';
+    fields.ai_status=ai.status||0;
+    fields.ai_code=ai.code||'';
+  }
   onProgress(100);
-  return{text,confidence:null,fields};
+  return{text,confidence:fields.confidence??null,fields};
 }
