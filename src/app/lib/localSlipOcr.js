@@ -73,7 +73,14 @@ function krungsriFields(text=''){
       (/[A-Za-z]{3,}|[ก-๙]{3,}/.test(x))
     );
     const ownCandidate=candidates.findIndex(x=>ownRe.test(x));
-    if(ownCandidate>=0)direction=ownCandidate===0?'expense':'income';
+    if(ownCandidate>=0){
+      // Krungsri slip order is sender -> recipient. If Thanee is the second party, money is income.
+      direction=ownCandidate>0?'income':'expense';
+    }
+    if(!direction&&ownIdx>=0){
+      const arrowIdx=lines.findIndex(x=>/^↓$|^v$|^to$/i.test(x));
+      if(arrowIdx>=0)direction=ownIdx>arrowIdx?'income':'expense';
+    }
   }
   let counterparty='';
   if(direction){
@@ -93,9 +100,21 @@ function details(text){
   return{counterparty,description:descriptionFrom(text)};
 }
 export function parseSlipText(text=''){
-  const t=clean(text),passes=split(t),amount=chooseAmount(t),k=krungsriFields(t);
-  const transaction_date=extractThaiSlipDate(t),direction=inferSlipDirection(t)||k.direction||'',d=details(t),description=d.description||'';
-  return{amount:amount==null?'':String(amount),transaction_date,direction,bank_name:mode(passes.map(bankFrom))||bankFrom(t),reference_no:mode(passes.map(referenceFrom))||referenceFrom(t),category:inferCategory(description,direction),confidence:null,confidence_by_field:{},ai_used:false,...d,raw_text:t};
+  const t=clean(text),passes=split(t),k=krungsriFields(t);
+  let amount=chooseAmount(t);
+  if(amount==null&&/กรุงศรี|krungsri/i.test(t)){
+    const m=t.match(/(?:จำนวนเงิน|amount)[^\d]{0,30}([0-9][0-9,]*\.\d{2})\s*(?:THB|บาท)?/i);
+    if(m)amount=Number(m[1].replace(/,/g,''));
+  }
+  let transaction_date=extractThaiSlipDate(t);
+  if(!transaction_date&&/กรุงศรี|krungsri/i.test(t)){
+    const m=t.match(/([0-3]?\d)\s*ก\.?\s*ย\.?\s*(25\d{2})/i);
+    if(m){const y=Number(m[2])-543;transaction_date=`${y}-09-${String(Number(m[1])).padStart(2,'0')}`;}
+  }
+  const direction=inferSlipDirection(t)||k.direction||'',d=details(t),description=d.description||'';
+  let reference_no=mode(passes.map(referenceFrom))||referenceFrom(t);
+  if(!reference_no&&/กรุงศรี|krungsri/i.test(t))reference_no=t.match(/\bKSA[0-9A-Z-]{10,}\b/i)?.[0]||'';
+  return{amount:amount==null?'':String(amount),transaction_date,direction,bank_name:mode(passes.map(bankFrom))||bankFrom(t),reference_no,category:inferCategory(description,direction),confidence:null,confidence_by_field:{},ai_used:false,...d,raw_text:t};
 }
 async function prep(file,top=0,bottom=1,variant='contrast'){const url=URL.createObjectURL(file);try{const img=await new Promise((resolve,reject)=>{const x=new Image();x.onload=()=>resolve(x);x.onerror=()=>reject(new Error('เปิดรูปสลิปไม่สำเร็จ'));x.src=url;});const y=Math.floor(img.naturalHeight*top),h=Math.max(1,Math.floor(img.naturalHeight*bottom)-y),scale=Math.max(1.8,Math.min(3,2200/Math.max(1,img.naturalWidth)));const c=document.createElement('canvas');c.width=Math.round(img.naturalWidth*scale);c.height=Math.round(h*scale);const ctx=c.getContext('2d',{willReadFrequently:true});ctx.drawImage(img,0,y,img.naturalWidth,h,0,0,c.width,c.height);if(variant!=='original'){const im=ctx.getImageData(0,0,c.width,c.height),d=im.data;for(let i=0;i<d.length;i+=4){const g=Math.round(.299*d[i]+.587*d[i+1]+.114*d[i+2]);const v=variant==='threshold'?(g>175?255:0):(g>225?255:g<60?0:Math.max(0,Math.min(255,Math.round((g-128)*1.55+128))));d[i]=d[i+1]=d[i+2]=v;}ctx.putImageData(im,0,0);}return await new Promise((resolve,reject)=>c.toBlob(b=>b?resolve(b):reject(new Error('เตรียมรูป OCR ไม่สำเร็จ')),'image/jpeg',.96));}finally{URL.revokeObjectURL(url);}}
 async function aiParse(file,localText=''){try{const fd=new FormData();fd.append('file',file,'slip.jpg');fd.append('local_text',String(localText||'').slice(0,12000));const r=await fetch('/api/finance/slip-ai',{method:'POST',body:fd});const j=await r.json().catch(()=>null);if(!r.ok||!j?.ok||!j?.fields)return{fields:null,error:j?.error||'AI_REQUEST_FAILED',detail:j?.detail||`HTTP ${r.status}`,status:r.status,code:j?.code||''};return{fields:j.fields,error:'',detail:'',status:r.status,code:'',model:j.model||''};}catch(e){return{fields:null,error:'AI_NETWORK_ERROR',detail:e?.message||'เรียก AI ไม่สำเร็จ',status:0,code:''};}}
@@ -113,7 +132,7 @@ function merge(local,ai){if(!ai)return local;const out={...local};
   if(useAi(ai,'category',ai.category,local.category,.6))out.category=ai.category;
   out.confidence=Number(ai.confidence)||0;out.confidence_by_field=ai.confidence_by_field||{};out.ai_used=true;out.ai_evidence=ai.evidence||'';return out;}
 function coreStrong(ai){return Boolean(ai?.direction)&&goodAmount(ai?.amount)&&Boolean(ai?.transaction_date)&&fc(ai,'direction')>=.7&&fc(ai,'amount')>=.72&&fc(ai,'transaction_date')>=.7;}
-async function runOcr(file,onProgress){if(!workerPromise)workerPromise=import('tesseract.js').then(({createWorker})=>createWorker('tha+eng',1,{logger:m=>{if(m.status==='recognizing text')onProgress(Math.min(88,40+Math.round(m.progress*48)));}})).catch(e=>{workerPromise=null;throw e;});const worker=await workerPromise;let text='';const passes=[[0,1,'3','contrast'],[0,1,'6','original'],[.18,.99,'6','contrast'],[.42,.99,'6','threshold']];try{for(let i=0;i<passes.length;i++){onProgress([42,55,68,80][i]);const img=await prep(file,passes[i][0],passes[i][1],passes[i][3]);await worker.setParameters({tessedit_pageseg_mode:passes[i][2],preserve_interword_spaces:'1',tessedit_char_whitelist:''});const r=await worker.recognize(img);text+=(text?'\n---OCR_PASS---\n':'')+(r.data.text||'');}}finally{await worker.setParameters({tessedit_pageseg_mode:'3',preserve_interword_spaces:'0',tessedit_char_whitelist:''});}return text;}
+async function runOcr(file,onProgress){if(!workerPromise)workerPromise=import('tesseract.js').then(({createWorker})=>createWorker('tha+eng',1,{logger:m=>{if(m.status==='recognizing text')onProgress(Math.min(88,40+Math.round(m.progress*48)));}})).catch(e=>{workerPromise=null;throw e;});const worker=await workerPromise;let text='';const passes=[[0,1,'3','contrast'],[0,1,'6','original'],[0,.42,'6','contrast'],[.32,.72,'6','contrast'],[.62,.92,'6','contrast'],[.18,.99,'6','contrast']];try{for(let i=0;i<passes.length;i++){onProgress([35,46,57,68,79,88][i]||88);const img=await prep(file,passes[i][0],passes[i][1],passes[i][3]);await worker.setParameters({tessedit_pageseg_mode:passes[i][2],preserve_interword_spaces:'1',tessedit_char_whitelist:''});const r=await worker.recognize(img);text+=(text?'\n---OCR_PASS---\n':'')+(r.data.text||'');}}finally{await worker.setParameters({tessedit_pageseg_mode:'3',preserve_interword_spaces:'0',tessedit_char_whitelist:''});}return text;}
 export async function readSlipLocally(file,onProgress=()=>{}){
   if(!file||!file.type.startsWith('image/'))throw new Error('กรุณาเลือกรูปภาพสลิป');
   if(file.size>15*1024*1024)throw new Error('รูปภาพต้องไม่เกิน 15 MB');
