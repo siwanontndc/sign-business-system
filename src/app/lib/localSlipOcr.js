@@ -8,23 +8,50 @@ const excluded=/(วันที่|date|เวลา|time|อ้างอิง
 function tokens(s){const out=[];const re=/(?:^|[^\dA-Za-z])((?:\d{1,3}(?:,\d{3})+|\d{1,8})(?:\.\d{1,2})?)(?![\dA-Za-z.,])/g;let m;while((m=re.exec(clean(s)))){const n=Number(m[1].replace(/,/g,''));if(n>0&&n<100000000)out.push(n);}return out;}
 function amountCandidates(text){const lines=clean(text).split(/\r?\n/).map(x=>x.trim()).filter(Boolean),out=[];for(let i=0;i<lines.length;i++){if(!money.test(lines[i])||fee.test(lines[i])||excluded.test(lines[i]))continue;for(const [j,line] of [lines[i].replace(money,''),lines[i+1]||''].entries()){if(fee.test(line)||excluded.test(line))continue;const vals=tokens(line);if(vals.length===1)out.push({value:vals[0],weight:j===0?6:4});if(vals.length)break;}}for(const line of lines){if(fee.test(line)||excluded.test(line))continue;const m=line.match(/(?:^|\s)((?:\d{1,3}(?:,\d{3})+|\d{1,8})\.\d{2})\s*(?:บาท|baht|฿)/i);if(m)out.push({value:Number(m[1].replace(/,/g,'')),weight:3});}return out;}
 function chooseAmount(text){const votes=new Map();for(const pass of split(text)){const seen=new Set();for(const c of amountCandidates(pass)){if(seen.has(c.value))continue;seen.add(c.value);votes.set(c.value,(votes.get(c.value)||0)+c.weight);}}if(!votes.size){for(const c of amountCandidates(text))votes.set(c.value,(votes.get(c.value)||0)+c.weight);}if(!votes.size)return null;const ranked=[...votes].sort((a,b)=>b[1]-a[1]||b[0]-a[0]);if(ranked.length>1&&ranked[0][1]===ranked[1][1])return null;return ranked[0][0];}
-function bankFrom(t){return clean(t).match(/กรุงไทย|กสิกรไทย|ไทยพาณิชย์|กรุงเทพ|กรุงศรี|ทหารไทยธนชาต|ออมสิน|ธ\\.ก\\.ส\\.|Krungthai|Kasikorn|SCB|Bangkok Bank|Krungsri|TTB/i)?.[0]||'';}
+function bankFrom(t){
+  const s=clean(t);
+  // Prefer the transfer/source bank for common slip layouts.
+  if(/krungsri|กรุงศรี/i.test(s))return'กรุงศรี';
+  if(/k\+|k plus|กสิกรไทย|kasikorn/i.test(s))return'กสิกรไทย';
+  if(/krungthai|กรุงไทย/i.test(s))return'กรุงไทย';
+  if(/scb|ไทยพาณิชย์/i.test(s))return'ไทยพาณิชย์';
+  if(/bangkok bank|กรุงเทพ/i.test(s))return'กรุงเทพ';
+  if(/ttb|ทหารไทยธนชาต/i.test(s))return'ทหารไทยธนชาต';
+  if(/ออมสิน/i.test(s))return'ออมสิน';
+  return'';
+}
 function referenceFrom(t){
-  const m=clean(t).match(/(?:เลขที่รายการ|เลขอ้างอิง|หมายเลขอ้างอิง|รหัสอ้างอิง|Reference|Ref\\.?|Transaction ID)\\s*[:：#]?\\s*([A-Za-z0-9-]{8,})/i);
+  const s=clean(t);
+  let m=s.match(/(?:เลขที่รายการ|เลขอ้างอิง|หมายเลขอ้างอิง|รหัสอ้างอิง|Reference|Ref\\.?|Transaction ID)\\s*[:：#]?\\s*([A-Za-z0-9-]{8,})/i);
+  if(m?.[1])return m[1];
+  // Krungsri and several Thai banks print a long standalone reference such as KSA000...
+  m=s.match(/\\b([A-Z]{2,5}\\d{10,30})\\b/i);
   return m?.[1]||'';
 }
 function mode(values){const c=new Map();for(const v of values.filter(Boolean))c.set(v,(c.get(v)||0)+1);return [...c].sort((a,b)=>b[1]-a[1])[0]?.[0]||'';}
 function descriptionFrom(text){
   const lines=clean(text).split(/\\r?\\n/).map(x=>x.trim()).filter(Boolean),memo=[];
   for(let i=0;i<lines.length;i++){
-    const m=lines[i].match(/(?:บันทึกช่วยจำ|หมายเหตุ|memo|note)\\s*[:：]?\\s*(.*)$/i);
-    if(m){const v=(m[1]||lines[i+1]||'').trim();if(v&&!/^(?:จำนวนเงิน|ค่าธรรมเนียม|วันที่|เลขอ้างอิง|หมายเลขอ้างอิง)/.test(v))memo.push(v);}
+    const m=lines[i].match(/(?:บันทึกช่วยจำ|บันทึกช่วยจํา|หมายเหตุ|memo|note)\\s*[:：]?\\s*(.*)$/i);
+    if(m){
+      let v=(m[1]||'').trim();
+      if(!v){
+        for(let j=i+1;j<Math.min(lines.length,i+4);j++){
+          if(!/^(?:จำนวนเงิน|ค่าธรรมเนียม|วันที่|เลขอ้างอิง|หมายเลขอ้างอิง|สแกนตรวจสอบ)/i.test(lines[j])){v=lines[j].trim();break;}
+        }
+      }
+      if(v&&!/^(?:จำนวนเงิน|ค่าธรรมเนียม|วันที่|เลขอ้างอิง|หมายเลขอ้างอิง)/.test(v))memo.push(v);
+    }
   }
   return mode(memo);
 }
-function inferCategory(description=''){
+function inferCategory(description='',direction=''){
   const t=clean(description);
-  if(/สติกเกอร์|สติ๊กเกอร์|ไวนิล|อะคริลิก|เหล็ก|สี|ไฟ|วัสดุ|กาว|น็อต|ซิงค์|อลูมิเนียม/.test(t))return'ค่าวัสดุ';
+  // A customer's memo like "ค่าสติกเกอร์" on money coming into Thanee is sales income,
+  // not an expense for materials.
+  if(direction==='income')return /มัดจำ/.test(t)?'เงินมัดจำ':'รายได้งานป้าย';
+  if(direction!=='expense')return'';
+  if(/สติกเกอร์|สติ๊กเกอร์|ไวนิล|อะคริลิก|เหล็ก|สี|วัสดุ|กาว|น็อต|ซิงค์|อลูมิเนียม/.test(t))return'ค่าวัสดุ';
   if(/น้ำมัน|เดินทาง|ทางด่วน|ที่จอด/.test(t))return'ค่าน้ำมัน/เดินทาง';
   if(/ค่าแรง|ช่าง|แรงงาน/.test(t))return'ค่าแรง';
   if(/โทรศัพท์|อินเทอร์เน็ต|ค่าเน็ต/.test(t))return'ค่าโทรศัพท์/อินเทอร์เน็ต';
@@ -68,7 +95,7 @@ function details(text){
 export function parseSlipText(text=''){
   const t=clean(text),passes=split(t),amount=chooseAmount(t),k=krungsriFields(t);
   const transaction_date=extractThaiSlipDate(t),direction=inferSlipDirection(t)||k.direction||'',d=details(t),description=d.description||'';
-  return{amount:amount==null?'':String(amount),transaction_date,direction,bank_name:mode(passes.map(bankFrom))||bankFrom(t),reference_no:mode(passes.map(referenceFrom))||referenceFrom(t),category:inferCategory(description),confidence:null,confidence_by_field:{},ai_used:false,...d,raw_text:t};
+  return{amount:amount==null?'':String(amount),transaction_date,direction,bank_name:mode(passes.map(bankFrom))||bankFrom(t),reference_no:mode(passes.map(referenceFrom))||referenceFrom(t),category:inferCategory(description,direction),confidence:null,confidence_by_field:{},ai_used:false,...d,raw_text:t};
 }
 async function prep(file,top=0,bottom=1,variant='contrast'){const url=URL.createObjectURL(file);try{const img=await new Promise((resolve,reject)=>{const x=new Image();x.onload=()=>resolve(x);x.onerror=()=>reject(new Error('เปิดรูปสลิปไม่สำเร็จ'));x.src=url;});const y=Math.floor(img.naturalHeight*top),h=Math.max(1,Math.floor(img.naturalHeight*bottom)-y),scale=Math.max(1.8,Math.min(3,2200/Math.max(1,img.naturalWidth)));const c=document.createElement('canvas');c.width=Math.round(img.naturalWidth*scale);c.height=Math.round(h*scale);const ctx=c.getContext('2d',{willReadFrequently:true});ctx.drawImage(img,0,y,img.naturalWidth,h,0,0,c.width,c.height);if(variant!=='original'){const im=ctx.getImageData(0,0,c.width,c.height),d=im.data;for(let i=0;i<d.length;i+=4){const g=Math.round(.299*d[i]+.587*d[i+1]+.114*d[i+2]);const v=variant==='threshold'?(g>175?255:0):(g>225?255:g<60?0:Math.max(0,Math.min(255,Math.round((g-128)*1.55+128))));d[i]=d[i+1]=d[i+2]=v;}ctx.putImageData(im,0,0);}return await new Promise((resolve,reject)=>c.toBlob(b=>b?resolve(b):reject(new Error('เตรียมรูป OCR ไม่สำเร็จ')),'image/jpeg',.96));}finally{URL.revokeObjectURL(url);}}
 async function aiParse(file,localText=''){try{const fd=new FormData();fd.append('file',file,'slip.jpg');fd.append('local_text',String(localText||'').slice(0,12000));const r=await fetch('/api/finance/slip-ai',{method:'POST',body:fd});const j=await r.json().catch(()=>null);if(!r.ok||!j?.ok||!j?.fields)return{fields:null,error:j?.error||'AI_REQUEST_FAILED',detail:j?.detail||`HTTP ${r.status}`,status:r.status,code:j?.code||''};return{fields:j.fields,error:'',detail:'',status:r.status,code:'',model:j.model||''};}catch(e){return{fields:null,error:'AI_NETWORK_ERROR',detail:e?.message||'เรียก AI ไม่สำเร็จ',status:0,code:''};}}
