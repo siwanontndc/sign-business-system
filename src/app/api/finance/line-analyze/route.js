@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { analyzeFinanceImage, serviceSupabase } from "../../../lib/financeAi";
 
 export const runtime = "nodejs";
+const FINANCE_LINE_GROUP="C38847122b9046058c55f79261b6695fc";
 
 function parseText(text = "") {
   const normalized = String(text).replace(/,/g, "");
@@ -50,10 +51,11 @@ export async function POST(request) {
 
     const { data: entry, error: entryError } = await supabase
       .from("line_account_entries")
-      .select("id,status,message_type,message_text,linked_note,is_context_note,storage_path,mime_type,event_at")
+      .select("id,status,group_id,message_type,message_text,linked_note,is_context_note,storage_path,mime_type,event_at")
       .eq("id", id)
       .single();
     if (entryError) throw entryError;
+    if (entry.group_id !== FINANCE_LINE_GROUP) return NextResponse.json({ error: "รายการนี้ไม่ได้มาจากกลุ่มบัญชี" }, { status: 403 });
     if (entry.status !== "pending") return NextResponse.json({ error: "Entry already reviewed" }, { status: 409 });
     if (entry.is_context_note) return NextResponse.json({ error: "Context note does not create a separate transaction" }, { status: 409 });
     if (/ทดสอบ\s*\d*/i.test(entry.message_text || "")) {

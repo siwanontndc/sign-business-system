@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../lib/supabase";
 
+const FINANCE_LINE_GROUP="C38847122b9046058c55f79261b6695fc";
 const CATEGORIES=["รายได้งานป้าย","เงินมัดจำ","ค่าวัสดุ","ค่าแรง","ค่าน้ำมัน/เดินทาง","ค่าเครื่องมือ","ค่าใช้จ่ายสำนักงาน","ภาษี/ค่าธรรมเนียม","อื่น ๆ"];
 const input={padding:"10px 11px",border:"1px solid #d1d5db",borderRadius:8,background:"white",boxSizing:"border-box"};
 const primaryButton={display:"inline-flex",alignItems:"center",justifyContent:"center",padding:"10px 14px",border:0,borderRadius:8,background:"#111827",color:"white",fontWeight:700,cursor:"pointer"};
@@ -31,7 +32,7 @@ export default function FinancePage(){
       supabase.from("finance_transactions").select("*").order("transaction_date",{ascending:false}),
       supabase.from("invoices").select("id,invoice_no,project_name,grand_total,status,created_at").order("created_at",{ascending:false}),
       supabase.from("receipts").select("id,receipt_no,project_name,grand_total,status,created_at").order("created_at",{ascending:false}),
-      supabase.from("line_account_entries").select("*").eq("status","pending").eq("is_context_note",false).order("created_at",{ascending:false}).limit(50)
+      supabase.from("line_account_entries").select("*").eq("group_id",FINANCE_LINE_GROUP).eq("status","pending").eq("is_context_note",false).order("created_at",{ascending:false}).limit(50)
     ]);
     if(tx.error)setError(tx.error.message);
     else setTransactions(tx.data||[]);
