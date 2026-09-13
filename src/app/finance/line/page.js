@@ -3,6 +3,7 @@ import {useEffect,useState} from "react";
 import {supabase} from "../../lib/supabase";
 import {readSlipLocally} from "../../lib/localSlipOcr";
 
+const FINANCE_GROUP="C38847122b9046058c55f79261b6695fc";
 const INCOME=["รายได้งานป้าย","เงินมัดจำ","โอนจากลูกค้า","เงินสดรับ","อื่น ๆ"];
 const EXPENSE=["ค่าวัสดุ","ค่าแรง","ค่าน้ำมัน/เดินทาง","ค่าเครื่องมือ","ค่าใช้จ่ายสำนักงาน","ภาษี/ค่าธรรมเนียม","ค่าเช่า","ค่าโฆษณา/การตลาด","ค่าสาธารณูปโภค","ค่าโทรศัพท์/อินเทอร์เน็ต","ค่างวด/ยานพาหนะ","อื่น ๆ"];
 const input={padding:"11px 12px",border:"1px solid #d1d5db",borderRadius:10,width:"100%",minWidth:0,boxSizing:"border-box",background:"#fff",fontSize:16,lineHeight:1.4};
@@ -44,7 +45,7 @@ export default function LineFinancePage(){
 
   async function load(){
     setLoading(true);setError("");
-    const{data,error:e}=await supabase.from("line_account_entries").select("*").order("created_at",{ascending:false}).limit(200);
+    const{data,error:e}=await supabase.from("line_account_entries").select("*").eq("group_id",FINANCE_GROUP).order("created_at",{ascending:false}).limit(200);
     if(e){setError(e.message);setLoading(false);return;}
     const list=(data||[]).filter(r=>!r.is_context_note);setRows(list);
     setDrafts(p=>{const n={};for(const r of list)n[r.id]=p[r.id]||initial(r);return n;});
