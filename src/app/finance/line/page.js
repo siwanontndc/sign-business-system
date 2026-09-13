@@ -120,9 +120,10 @@ export default function LineFinancePage(){
       if(!f.direction)missing.push("ประเภท");
       if(!goodAmount(f.amount))missing.push("จำนวนเงิน");
       if(!f.transaction_date)missing.push("วันที่");
-      const source=f.ai_used?`AI Vision + OCR${f.confidence!=null?` (ความมั่นใจ ${Math.round(Number(f.confidence)*100)}%)`:""}`:"OCR ในเครื่อง (AI Vision ยังไม่พร้อม)";
+      const source="OCR ฟรีบนมือถือ";
       setNotice(p=>({...p,[r.id]:missing.length?`${source}: ยังไม่ยืนยัน ${missing.join(" / ")} กรุณาตรวจสอบ`:`${source}: อ่านข้อมูลแล้ว กรุณาตรวจสอบก่อนบันทึก`}));
-      if(!result.text.trim())setError("OCR ไม่พบข้อความ กรุณาตรวจสอบภาพและกรอกข้อมูลด้วยมือ");
+      if(!result.text.trim())setError("OCR ไม่พบข้อความ กรุณาตรวจสอบภาพ");
+      setTimeout(()=>{document.getElementById(`slip-form-${r.id}`)?.scrollIntoView({behavior:"smooth",block:"start"});},180);
     }catch(e){setError("อ่านสลิปไม่สำเร็จ: "+(e.message||"ไม่ทราบสาเหตุ"));}
     finally{setReading(null);}
   }
@@ -176,7 +177,7 @@ export default function LineFinancePage(){
     `}</style>
     <div className="lf-shell" style={{maxWidth:1180,margin:"auto"}}>
     <div className="lf-header" style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:14}}>
-      <div style={{minWidth:0}}><h1 style={{margin:"0 0 4px",fontSize:28}}>💬 บัญชีจาก LINE</h1><div style={{color:"#6b7280"}}>อ่านสลิปด้วย OCR + AI Vision และตรวจสอบก่อนบันทึกเงินจริง</div></div>
+      <div style={{minWidth:0}}><h1 style={{margin:"0 0 4px",fontSize:28}}>💬 บัญชีจาก LINE</h1><div style={{color:"#6b7280"}}>อ่านสลิปด้วย OCR ฟรีบนมือถือ และตรวจสอบก่อนบันทึกเงินจริง</div></div>
       <div className="lf-top-nav" style={{display:"flex",gap:8,flexWrap:"wrap"}}><a href="/finance">การเงิน</a><a href="/finance/reports">📊 รายงาน</a><a href="/finance/categories">🏷️ หมวดหมู่</a></div>
     </div>
     <div className="lf-filter" style={{display:"flex",gap:8,margin:"12px 0 16px",flexWrap:"wrap"}}><select style={{...input,width:190}} value={filter} onChange={e=>setFilter(e.target.value)}><option value="pending">รอตรวจสอบ</option><option value="approved">อนุมัติแล้ว</option><option value="rejected">ปฏิเสธ</option><option value="all">ทั้งหมด</option></select><button onClick={load} disabled={loading} style={{...btn,border:"1px solid #d1d5db",background:"white"}}>รีเฟรช</button></div>
@@ -189,10 +190,10 @@ export default function LineFinancePage(){
         <div className="lf-grid" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,320px),1fr))",gap:16,marginTop:12}}>
           <div style={{minWidth:0}}>{r.storage_path&&media[r.storage_path]&&r.mime_type?.startsWith("image/")?<img src={media[r.storage_path]} alt="สลิปจาก LINE" style={{width:"100%",maxHeight:520,objectFit:"contain",borderRadius:10,background:"#f9fafb"}}/>:<div style={{padding:20,background:"#f9fafb",borderRadius:10}}>ไม่มีรูปสลิป</div>}{r.linked_note&&<p style={{fontSize:13,overflowWrap:"anywhere"}}><b>คำอธิบาย:</b> {r.linked_note}</p>}</div>
           <div style={{minWidth:0}}>{r.status==="pending"?<>
-            <button disabled={!!reading||!r.storage_path||!r.mime_type?.startsWith("image/")} onClick={()=>analyze(r)} style={{...btn,background:"#0f172a",color:"white",border:0,width:"100%"}}>{reading===r.id?`กำลังอ่าน ${progress}%`:"อ่านสลิปด้วย OCR + AI"}</button>
+            <button disabled={!!reading||!r.storage_path||!r.mime_type?.startsWith("image/")} onClick={()=>analyze(r)} style={{...btn,background:"#0f172a",color:"white",border:0,width:"100%"}}>{reading===r.id?`กำลังอ่าน ${progress}%`:"อ่านสลิปฟรีบนมือถือ"}</button>
             {notice[r.id]&&<div style={{marginTop:8,padding:10,borderRadius:9,background:notice[r.id].includes("ยังไม่")?"#fff7ed":"#ecfdf5",color:notice[r.id].includes("ยังไม่")?"#9a3412":"#166534",fontSize:13}}>{notice[r.id]}</div>}{duplicates[r.id]&&<div style={{marginTop:8,padding:12,borderRadius:10,background:"#fef2f2",border:"2px solid #ef4444",color:"#991b1b",fontWeight:800}}>⚠️ รายการซ้ำ — พบรายการที่บันทึกแล้ว {Number(duplicates[r.id].amount||0).toLocaleString("th-TH",{minimumFractionDigits:2})} บาท วันที่ {new Date(duplicates[r.id].transaction_date).toLocaleDateString("th-TH",{timeZone:"Asia/Bangkok"})}{duplicates[r.id].reference_no?` • Ref: ${duplicates[r.id].reference_no}`:""}<div style={{fontSize:12,fontWeight:600,marginTop:4}}>ระบบปิดการบันทึกซ้ำอัตโนมัติ</div></div>}
             {raw[r.id]&&<details style={{marginTop:8}}><summary>ดูข้อความที่ OCR อ่านได้</summary><pre style={{whiteSpace:"pre-wrap",overflowWrap:"anywhere",fontSize:12,background:"#f8fafc",padding:10,borderRadius:8}}>{raw[r.id]}</pre></details>}
-            <div className="lf-form-grid" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,220px),1fr))",gap:10,marginTop:12}}>
+            <div id={`slip-form-${r.id}`} className="lf-form-grid" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,220px),1fr))",gap:10,marginTop:12,scrollMarginTop:90}}>
               <label style={{fontWeight:700,minWidth:0}}>ประเภท<div className="lf-direction-buttons" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:5}}><button type="button" onClick={()=>change(r.id,"direction","income")} style={{...btn,border:d.direction==="income"?"2px solid #0b6cff":"1px solid #d1d5db",background:d.direction==="income"?"#0b6cff":"white",color:d.direction==="income"?"white":"#111827"}}>↑ รายรับ</button><button type="button" onClick={()=>change(r.id,"direction","expense")} style={{...btn,border:d.direction==="expense"?"2px solid #e11d48":"1px solid #d1d5db",background:d.direction==="expense"?"#e11d48":"white",color:d.direction==="expense"?"white":"#111827"}}>↓ รายจ่าย</button></div></label>
               <label style={{fontWeight:700,minWidth:0}}>จำนวนเงิน<input style={{...input,marginTop:5,fontWeight:900,fontSize:22,color:accent}} type="number" step="0.01" value={d.amount??""} onChange={e=>change(r.id,"amount",e.target.value)}/></label>
               <label style={{minWidth:0}}>หมวดหมู่<select style={{...input,marginTop:5}} value={d.category||""} disabled={!known} onChange={e=>change(r.id,"category",e.target.value)}><option value="">เลือกหมวดหมู่</option>{cats.map(c=><option key={c} value={c}>{c}</option>)}</select></label>
