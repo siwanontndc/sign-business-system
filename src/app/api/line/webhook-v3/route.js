@@ -2,18 +2,24 @@ import { NextResponse } from "next/server";
 import { POST as legacyPost } from "../webhook-v2/route";
 import { serviceSupabase } from "../../../lib/financeAi";
 import { autoSelectSurveyForWorkGroup } from "../../../lib/lineAutoSurvey";
+import { isValidLineSignature } from "../../../lib/lineSignature";
 
 export const runtime = "nodejs";
 
 async function noReply() {}
 
 export async function POST(request) {
-  const copy = request.clone();
+  const rawBody = await request.clone().text();
+  const signature = request.headers.get("x-line-signature");
+  if (!isValidLineSignature(rawBody, signature)) {
+    return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+  }
+
   let body;
   try {
-    body = await copy.json();
+    body = JSON.parse(rawBody);
   } catch {
-    return legacyPost(request);
+    return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
   }
 
   const supabase = serviceSupabase();
