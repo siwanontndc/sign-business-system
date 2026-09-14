@@ -19,9 +19,10 @@ export default function SurveyDetailPage(){
   }
   function set(k,v){ setSurvey(x=>({...x,[k]:v})); }
   function chooseCustomer(v){ const c=customers.find(x=>x.id===v); setSurvey(x=>({...x,customer_id:v||null,customer_name:c?(c.company_name||c.contact_name||c.customer_code):x.customer_name,contact_name:c?.contact_name||x.contact_name,phone:c?.phone||x.phone})); }
+  function localDateTime(v){ if(!v)return''; const d=new Date(v),z=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}-${z(d.getMonth()+1)}-${z(d.getDate())}T${z(d.getHours())}:${z(d.getMinutes())}`; }
   async function save(){
     setSaving(true);
-    const {error}=await supabase.from('site_surveys').update({customer_id:survey.customer_id||null,customer_name:survey.customer_name,contact_name:survey.contact_name||null,phone:survey.phone||null,project_name:survey.project_name||null,location_text:survey.location_text||null,dimensions:survey.dimensions||null,electrical_notes:survey.electrical_notes||null,access_notes:survey.access_notes||null,note:survey.note||null,status:survey.status,updated_at:new Date().toISOString()}).eq('id',id);
+    const {error}=await supabase.from('site_surveys').update({customer_id:survey.customer_id||null,customer_name:survey.customer_name,contact_name:survey.contact_name||null,phone:survey.phone||null,scheduled_at:survey.scheduled_at?new Date(survey.scheduled_at).toISOString():null,project_name:survey.project_name||null,location_text:survey.location_text||null,dimensions:survey.dimensions||null,electrical_notes:survey.electrical_notes||null,access_notes:survey.access_notes||null,note:survey.note||null,status:survey.status,updated_at:new Date().toISOString()}).eq('id',id);
     setSaving(false); if(error) alert(error.message); else alert('บันทึกงานสำรวจแล้ว');
   }
   async function upload(e){
@@ -49,6 +50,7 @@ export default function SurveyDetailPage(){
       <section style={{background:'white',padding:18,borderRadius:14,border:'1px solid #e5e7eb'}}><h2 style={{marginTop:0}}>ข้อมูลสำรวจ</h2>
         <label>ลูกค้าในระบบ<select style={{...inp,marginTop:5,marginBottom:10}} value={survey.customer_id||''} onChange={e=>chooseCustomer(e.target.value)}><option value=''>-- ยังไม่ผูกลูกค้า --</option>{customers.map(c=><option key={c.id} value={c.id}>{c.customer_code||'-'} — {c.company_name||c.contact_name}</option>)}</select></label>
         {[['customer_name','ชื่อลูกค้า'],['contact_name','ผู้ติดต่อ'],['phone','โทรศัพท์'],['project_name','ชื่องาน'],['location_text','สถานที่'],['dimensions','ขนาด/ระยะวัด'],['electrical_notes','ระบบไฟ'],['access_notes','ทางเข้าติดตั้ง/รถกระเช้า']].map(([k,l])=><label key={k} style={{display:'block',marginBottom:10}}>{l}<input style={{...inp,marginTop:5}} value={survey[k]||''} onChange={e=>set(k,e.target.value)}/></label>)}
+        <label style={{display:'block',marginBottom:10}}>วันที่นัดสำรวจ<input type='datetime-local' style={{...inp,marginTop:5}} value={localDateTime(survey.scheduled_at)} onChange={e=>set('scheduled_at',e.target.value)}/></label>
         <label>หมายเหตุ<textarea style={{...inp,marginTop:5,minHeight:90}} value={survey.note||''} onChange={e=>set('note',e.target.value)}/></label>
         <label style={{display:'block',marginTop:10}}>สถานะ<select style={{...inp,marginTop:5}} value={survey.status} onChange={e=>set('status',e.target.value)}><option value='surveying'>กำลังสำรวจ</option><option value='ready_to_quote'>พร้อมเสนอราคา</option><option value='quoted'>ออกใบเสนอราคาแล้ว</option><option value='cancelled'>ยกเลิก</option></select></label>
         <button onClick={save} disabled={saving} style={{width:'100%',marginTop:14,padding:12,border:0,borderRadius:9,background:'#be185d',color:'white',fontWeight:900}}>{saving?'กำลังบันทึก...':'💾 บันทึกข้อมูลสำรวจ'}</button>
