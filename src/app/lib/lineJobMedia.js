@@ -1,153 +1,31 @@
-const MEDIA_LABELS = {
-  artwork: "แบบงาน",
-  before_install: "ก่อนติดตั้ง",
-  during_install: "ระหว่างติดตั้ง",
-  after_install: "หลังติดตั้ง",
-};
-
-function groupIdOf(event) {
-  return event.source?.groupId || event.source?.roomId || null;
+const MEDIA_LABELS={artwork:"แบบงาน",before_install:"ก่อนติดตั้ง",during_install:"ระหว่างติดตั้ง",after_install:"หลังติดตั้ง"};
+function groupIdOf(event){return event.source?.groupId||event.source?.roomId||null}
+function mediaType(word=""){const v=word.trim().toLowerCase();if(["แบบ","แบบงาน","artwork"].includes(v))return"artwork";if(["ก่อน","ก่อนติดตั้ง","before"].includes(v))return"before_install";if(["ระหว่าง","ระหว่างติดตั้ง","during"].includes(v))return"during_install";if(["หลัง","หลังติดตั้ง","after"].includes(v))return"after_install";return null}
+export function parseFieldworkCommand(text=""){
+ const v=text.trim();
+ if(/^#?(ปิดสำรวจ|จบสำรวจ)$/i.test(v))return{action:"clearSurvey"};
+ if(/^#?(สรุปสำรวจ|surveysummary)$/i.test(v))return{action:"surveySummary"};
+ const sm=v.match(/^#?(?:สำรวจ|survey)\s+(\S+)$/i);if(sm)return{action:"setSurvey",surveyRef:sm[1].trim()};
+ if(/^#?(ปิดงาน|จบงาน|clearjob)$/i.test(v))return{action:"clear"};
+ if(/^#?(สรุปงาน|jobsummary)$/i.test(v))return{action:"summary"};
+ const m=v.match(/^#?(?:งาน|job)\s+(\S+)\s+(แบบงาน|แบบ|ก่อนติดตั้ง|ก่อน|ระหว่างติดตั้ง|ระหว่าง|หลังติดตั้ง|หลัง|artwork|before|during|after)$/i);if(!m)return null;
+ return{action:"set",jobRef:m[1].trim(),mediaType:mediaType(m[2])};
 }
-
-function mediaType(word = "") {
-  const value = word.trim().toLowerCase();
-  if (["แบบ", "แบบงาน", "artwork"].includes(value)) return "artwork";
-  if (["ก่อน", "ก่อนติดตั้ง", "before"].includes(value)) return "before_install";
-  if (["ระหว่าง", "ระหว่างติดตั้ง", "during"].includes(value)) return "during_install";
-  if (["หลัง", "หลังติดตั้ง", "after"].includes(value)) return "after_install";
-  return null;
+async function contextOf(supabase,groupId){if(!groupId)return null;const{data,error}=await supabase.from("job_line_contexts").select("group_id,installation_job_id,media_type,expires_at").eq("group_id",groupId).maybeSingle();if(error)throw error;return data||null}
+async function surveyContextOf(supabase,groupId){if(!groupId)return null;const{data,error}=await supabase.from("survey_line_contexts").select("group_id,survey_id,expires_at").eq("group_id",groupId).maybeSingle();if(error)throw error;return data||null}
+async function findJob(supabase,jobRef){const{data:q,error:qe}=await supabase.from("quotations").select("id,quotation_no,project_name,customers(company_name,contact_name)").eq("quotation_no",jobRef).limit(1).maybeSingle();if(qe)throw qe;if(!q)return null;const{data:i,error:ie}=await supabase.from("installation_jobs").select("id,status,scheduled_at").eq("quotation_id",q.id).order("created_at",{ascending:false}).limit(1).maybeSingle();if(ie)throw ie;if(!i)return null;return{quotation:q,installation:i}}
+async function findSurvey(supabase,ref){const{data,error}=await supabase.from("site_surveys").select("id,survey_no,customer_name,project_name,status").eq("survey_no",ref).maybeSingle();if(error)throw error;return data||null}
+export async function handleFieldworkText({event,supabase,reply}){
+ const cmd=parseFieldworkCommand(event.message?.text||"");if(!cmd)return false;const groupId=groupIdOf(event);if(!groupId){await reply(event.replyToken,"คำสั่งนี้ใช้ใน LINE กลุ่มหรือห้องงานเท่านั้น");return true}
+ if(cmd.action==="clearSurvey"){await supabase.from("survey_line_contexts").delete().eq("group_id",groupId);await reply(event.replyToken,"✅ ปิดโหมดรับรูปสำรวจแล้ว");return true}
+ if(cmd.action==="surveySummary"){const c=await surveyContextOf(supabase,groupId);if(!c){await reply(event.replyToken,"ยังไม่ได้เลือกงานสำรวจ\nพิมพ์: #สำรวจ SUR-xxxx");return true}const{count,error}=await supabase.from("survey_media").select("id",{count:"exact",head:true}).eq("survey_id",c.survey_id);if(error)throw error;await reply(event.replyToken,`📍 งานสำรวจปัจจุบันมี ${count||0} รูป`);return true}
+ if(cmd.action==="setSurvey"){const s=await findSurvey(supabase,cmd.surveyRef);if(!s){await reply(event.replyToken,`⚠️ ไม่พบงานสำรวจ ${cmd.surveyRef}`);return true}await supabase.from("job_line_contexts").delete().eq("group_id",groupId);const{error}=await supabase.from("survey_line_contexts").upsert({group_id:groupId,survey_id:s.id,set_by_line_user_id:event.source?.userId||null,expires_at:new Date(Date.now()+12*60*60*1000).toISOString(),updated_at:new Date().toISOString()},{onConflict:"group_id"});if(error)throw error;await reply(event.replyToken,`✅ พร้อมรับรูปสำรวจ\n${s.survey_no} — ${s.customer_name}\n${s.project_name||"ไม่ระบุชื่องาน"}\n\nส่งรูปต่อได้เลย ระบบจะเก็บอัตโนมัติ 12 ชั่วโมง\nเสร็จแล้วพิมพ์ #ปิดสำรวจ`);return true}
+ if(cmd.action==="clear"){await supabase.from("job_line_contexts").delete().eq("group_id",groupId);await reply(event.replyToken,"✅ ปิดโหมดรับรูปงานแล้ว");return true}
+ if(cmd.action==="summary"){const c=await contextOf(supabase,groupId);if(!c){await reply(event.replyToken,"ยังไม่ได้เลือกงาน\nพิมพ์: #งาน เลขใบเสนอราคา ก่อน");return true}const{data,error}=await supabase.from("job_media").select("media_type").eq("installation_job_id",c.installation_job_id);if(error)throw error;const x={artwork:0,before_install:0,during_install:0,after_install:0};for(const i of data||[])x[i.media_type]=(x[i.media_type]||0)+1;await reply(event.replyToken,`📋 สรุปรูปงาน\nแบบงาน ${x.artwork} รูป\nก่อนติดตั้ง ${x.before_install} รูป\nระหว่างติดตั้ง ${x.during_install} รูป\nหลังติดตั้ง ${x.after_install} รูป\nโหมดปัจจุบัน: ${MEDIA_LABELS[c.media_type]}`);return true}
+ const job=await findJob(supabase,cmd.jobRef);if(!job){await reply(event.replyToken,`⚠️ ไม่พบงาน ${cmd.jobRef}\nกรุณาตรวจเลขใบเสนอราคา และต้องมีงานติดตั้งก่อน`);return true}await supabase.from("survey_line_contexts").delete().eq("group_id",groupId);const{error}=await supabase.from("job_line_contexts").upsert({group_id:groupId,installation_job_id:job.installation.id,media_type:cmd.mediaType,set_by_line_user_id:event.source?.userId||null,expires_at:new Date(Date.now()+12*60*60*1000).toISOString(),updated_at:new Date().toISOString()},{onConflict:"group_id"});if(error)throw error;const customer=job.quotation?.customers?.company_name||job.quotation?.customers?.contact_name||"-";await reply(event.replyToken,`✅ พร้อมรับรูปงาน\n${job.quotation.quotation_no} — ${customer}\n${job.quotation.project_name||"ไม่ระบุชื่องาน"}\nหมวด: ${MEDIA_LABELS[cmd.mediaType]}\n\nส่งรูปต่อได้เลย ระบบจะเก็บอัตโนมัติ 12 ชั่วโมง\nเสร็จแล้วพิมพ์ #ปิดงาน`);return true
 }
-
-export function parseFieldworkCommand(text = "") {
-  const value = text.trim();
-  if (/^#?(ปิดงาน|จบงาน|clearjob)$/i.test(value)) return { action: "clear" };
-  if (/^#?(สรุปงาน|jobsummary)$/i.test(value)) return { action: "summary" };
-  const match = value.match(/^#?(?:งาน|job)\s+(\S+)\s+(แบบงาน|แบบ|ก่อนติดตั้ง|ก่อน|ระหว่างติดตั้ง|ระหว่าง|หลังติดตั้ง|หลัง|artwork|before|during|after)$/i);
-  if (!match) return null;
-  return { action: "set", jobRef: match[1].trim(), mediaType: mediaType(match[2]) };
-}
-
-async function contextOf(supabase, groupId) {
-  if (!groupId) return null;
-  const { data, error } = await supabase
-    .from("job_line_contexts")
-    .select("group_id, installation_job_id, media_type, expires_at")
-    .eq("group_id", groupId)
-    .maybeSingle();
-  if (error) throw error;
-  return data || null;
-}
-
-async function findJob(supabase, jobRef) {
-  const { data: quotation, error: quoteError } = await supabase
-    .from("quotations")
-    .select("id, quotation_no, project_name, customers(company_name, contact_name)")
-    .eq("quotation_no", jobRef)
-    .limit(1)
-    .maybeSingle();
-  if (quoteError) throw quoteError;
-  if (!quotation) return null;
-
-  const { data: installation, error: installError } = await supabase
-    .from("installation_jobs")
-    .select("id, status, scheduled_at")
-    .eq("quotation_id", quotation.id)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (installError) throw installError;
-  if (!installation) return null;
-  return { quotation, installation };
-}
-
-export async function handleFieldworkText({ event, supabase, reply }) {
-  const command = parseFieldworkCommand(event.message?.text || "");
-  if (!command) return false;
-  const groupId = groupIdOf(event);
-  if (!groupId) {
-    await reply(event.replyToken, "คำสั่งงานหน้างานใช้ใน LINE กลุ่มหรือห้องงานเท่านั้น");
-    return true;
-  }
-
-  if (command.action === "clear") {
-    const { error } = await supabase.from("job_line_contexts").delete().eq("group_id", groupId);
-    if (error) throw error;
-    await reply(event.replyToken, "✅ ปิดโหมดรับรูปงานแล้ว\nรูปถัดไปจะไม่ถูกผูกกับงานเดิม");
-    return true;
-  }
-
-  if (command.action === "summary") {
-    const context = await contextOf(supabase, groupId);
-    if (!context) {
-      await reply(event.replyToken, "ยังไม่ได้เลือกงาน\nพิมพ์: #งาน เลขใบเสนอราคา ก่อน");
-      return true;
-    }
-    const { data, error } = await supabase.from("job_media").select("media_type").eq("installation_job_id", context.installation_job_id);
-    if (error) throw error;
-    const counts = { artwork: 0, before_install: 0, during_install: 0, after_install: 0 };
-    for (const item of data || []) counts[item.media_type] = (counts[item.media_type] || 0) + 1;
-    await reply(event.replyToken, `📋 สรุปรูปงาน\nแบบงาน ${counts.artwork} รูป\nก่อนติดตั้ง ${counts.before_install} รูป\nระหว่างติดตั้ง ${counts.during_install} รูป\nหลังติดตั้ง ${counts.after_install} รูป\nโหมดปัจจุบัน: ${MEDIA_LABELS[context.media_type]}`);
-    return true;
-  }
-
-  const job = await findJob(supabase, command.jobRef);
-  if (!job) {
-    await reply(event.replyToken, `⚠️ ไม่พบงาน ${command.jobRef}\nกรุณาตรวจเลขใบเสนอราคา และต้องมีงานติดตั้งใน SIGN BUSINESS ก่อน`);
-    return true;
-  }
-
-  const { error } = await supabase.from("job_line_contexts").upsert({
-    group_id: groupId,
-    installation_job_id: job.installation.id,
-    media_type: command.mediaType,
-    set_by_line_user_id: event.source?.userId || null,
-    expires_at: new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString(),
-    updated_at: new Date().toISOString(),
-  }, { onConflict: "group_id" });
-  if (error) throw error;
-
-  const customer = job.quotation?.customers?.company_name || job.quotation?.customers?.contact_name || "-";
-  await reply(event.replyToken, `✅ พร้อมรับรูปงาน\n${job.quotation.quotation_no} — ${customer}\n${job.quotation.project_name || "ไม่ระบุชื่องาน"}\nหมวด: ${MEDIA_LABELS[command.mediaType]}\n\nส่งรูปต่อได้เลย ระบบจะเก็บอัตโนมัติ 12 ชั่วโมง\nเสร็จแล้วพิมพ์ #ปิดงาน`);
-  return true;
-}
-
-export async function handleFieldworkImage({ event, supabase, downloadImage, reply }) {
-  const groupId = groupIdOf(event);
-  if (!groupId) return "none";
-  const context = await contextOf(supabase, groupId);
-  if (!context) return "none";
-
-  if (new Date(context.expires_at).getTime() <= Date.now()) {
-    await reply(event.replyToken, "⏰ โหมดรับรูปงานหมดเวลาแล้ว\nพิมพ์ #งาน เลขใบเสนอราคา ก่อน/ระหว่าง/หลัง อีกครั้งก่อนส่งรูป");
-    return "expired";
-  }
-
-  const file = await downloadImage(event);
-  const { data: existing } = await supabase.from("job_media").select("id").eq("line_message_id", file.messageId).maybeSingle();
-  if (existing) return "saved";
-
-  const path = `line/${groupId}/${context.installation_job_id}/${context.media_type}/${file.messageId}.${file.ext}`;
-  const { error: uploadError } = await supabase.storage.from("job-media").upload(path, file.buffer, { contentType: file.mimeType, upsert: false });
-  if (uploadError) throw uploadError;
-
-  const { error: insertError } = await supabase.from("job_media").insert({
-    installation_job_id: context.installation_job_id,
-    media_type: context.media_type,
-    file_name: `LINE-${file.messageId}.${file.ext}`,
-    storage_path: path,
-    mime_type: file.mimeType,
-    file_size: file.buffer.length,
-    note: "รับอัตโนมัติจาก LINE กลุ่ม",
-    source: "line",
-    line_message_id: file.messageId,
-    line_group_id: groupId,
-    line_user_id: event.source?.userId || null,
-    captured_at: event.timestamp ? new Date(event.timestamp).toISOString() : new Date().toISOString(),
-  });
-
-  if (insertError) {
-    await supabase.storage.from("job-media").remove([path]);
-    throw insertError;
-  }
-  return "saved";
+export async function handleFieldworkImage({event,supabase,downloadImage,reply}){
+ const groupId=groupIdOf(event);if(!groupId)return"none";
+ const sc=await surveyContextOf(supabase,groupId);if(sc){if(new Date(sc.expires_at).getTime()<=Date.now()){await reply(event.replyToken,"⏰ โหมดรับรูปสำรวจหมดเวลาแล้ว\nพิมพ์ #สำรวจ SUR-xxxx อีกครั้ง");return"expired"}const file=await downloadImage(event);const{data:existing}=await supabase.from("survey_media").select("id").eq("line_message_id",file.messageId).maybeSingle();if(existing)return"saved";const path=`surveys/${sc.survey_id}/line/${file.messageId}.${file.ext}`;const{error:ue}=await supabase.storage.from("job-media").upload(path,file.buffer,{contentType:file.mimeType,upsert:false});if(ue)throw ue;const{error:ie}=await supabase.from("survey_media").insert({survey_id:sc.survey_id,file_name:`LINE-${file.messageId}.${file.ext}`,storage_path:path,mime_type:file.mimeType,file_size:file.buffer.length,note:"รับอัตโนมัติจาก LINE กลุ่ม",source:"line",line_message_id:file.messageId,line_group_id:groupId,line_user_id:event.source?.userId||null,captured_at:event.timestamp?new Date(event.timestamp).toISOString():new Date().toISOString()});if(ie){await supabase.storage.from("job-media").remove([path]);throw ie}return"saved"}
+ const c=await contextOf(supabase,groupId);if(!c)return"none";if(new Date(c.expires_at).getTime()<=Date.now()){await reply(event.replyToken,"⏰ โหมดรับรูปงานหมดเวลาแล้ว\nพิมพ์ #งาน เลขใบเสนอราคา ก่อน/ระหว่าง/หลัง อีกครั้ง");return"expired"}const file=await downloadImage(event);const{data:existing}=await supabase.from("job_media").select("id").eq("line_message_id",file.messageId).maybeSingle();if(existing)return"saved";const path=`line/${groupId}/${c.installation_job_id}/${c.media_type}/${file.messageId}.${file.ext}`;const{error:ue}=await supabase.storage.from("job-media").upload(path,file.buffer,{contentType:file.mimeType,upsert:false});if(ue)throw ue;const{error:ie}=await supabase.from("job_media").insert({installation_job_id:c.installation_job_id,media_type:c.media_type,file_name:`LINE-${file.messageId}.${file.ext}`,storage_path:path,mime_type:file.mimeType,file_size:file.buffer.length,note:"รับอัตโนมัติจาก LINE กลุ่ม",source:"line",line_message_id:file.messageId,line_group_id:groupId,line_user_id:event.source?.userId||null,captured_at:event.timestamp?new Date(event.timestamp).toISOString():new Date().toISOString()});if(ie){await supabase.storage.from("job-media").remove([path]);throw ie}return"saved"
 }

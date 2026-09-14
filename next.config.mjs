@@ -5,6 +5,11 @@ const nextConfig = {
     return {
       beforeFiles: [
         { source: "/api/line/webhook", destination: "/api/line/webhook-v2" },
+        {
+          source: "/quotations/new",
+          has: [{ type: "query", key: "survey", value: "(?<survey>.*)" }],
+          destination: "/surveys/:survey/quotation",
+        },
       ],
       afterFiles: [],
       fallback: [],
