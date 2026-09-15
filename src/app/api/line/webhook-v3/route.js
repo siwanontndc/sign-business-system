@@ -5,7 +5,15 @@ import { isValidLineSignature } from "../../../lib/lineSignature";
 
 export const runtime = "nodejs";
 
-async function noReply() {}
+async function replyText(replyToken, text) {
+  const token = process.env.LINE_CHANNEL_ACCESS_TOKEN;
+  if (!token || !replyToken) return;
+  await fetch("https://api.line.me/v2/bot/message/reply", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ replyToken, messages: [{ type: "text", text }] }),
+  });
+}
 
 async function forwardToLegacy(request, rawBody, signature) {
   const url = new URL("/api/line/webhook-v2", request.url);
@@ -37,8 +45,8 @@ export async function POST(request) {
   const supabase = serviceSupabase();
   for (const event of body.events || []) {
     if (event.type !== "message" || event.message?.type !== "image") continue;
-    const result = await autoSelectSurveyForWorkGroup({ event, supabase, reply: noReply });
-    if (result === "work_group_no_survey" || result === "work_group_ambiguous") {
+    const result = await autoSelectSurveyForWorkGroup({ event, supabase, reply: replyText });
+    if (result === "work_group_ambiguous") {
       return NextResponse.json({ ok: true, handled: result });
     }
   }
