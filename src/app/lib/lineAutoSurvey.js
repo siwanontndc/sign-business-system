@@ -13,6 +13,14 @@ async function getGroupName(groupId) {
   return String(data?.groupName || "");
 }
 
+function makeSurveyNo() {
+  const d = new Date();
+  const yy = String(d.getFullYear()).slice(-2);
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const suffix = String(Date.now()).slice(-6);
+  return `SUR-${yy}${mm}-${suffix}`;
+}
+
 export async function autoSelectSurveyForWorkGroup({ event, supabase, reply }) {
   const groupId = sourceGroupId(event);
   if (!groupId) return "not_work_group";
@@ -30,13 +38,26 @@ export async function autoSelectSurveyForWorkGroup({ event, supabase, reply }) {
     .limit(5);
   if (error) throw error;
 
-  if (!surveys?.length) {
-    await reply(event.replyToken, "📍 กลุ่มงานนี้ยังไม่มีงานสำรวจที่เปิดอยู่ กรุณาสร้างงานสำรวจใน SIGN BUSINESS ก่อนส่งรูป");
-    return "work_group_no_survey";
-  }
-
   let chosen = null;
-  if (surveys.length === 1) {
+  let autoCreated = false;
+
+  if (!surveys?.length) {
+    const surveyNo = makeSurveyNo();
+    const { data: created, error: createError } = await supabase
+      .from("site_surveys")
+      .insert({
+        survey_no: surveyNo,
+        customer_name: "รอระบุลูกค้า (LINE)",
+        project_name: groupName ? `รับรูปจาก ${groupName}` : "งานสำรวจจาก LINE",
+        status: "surveying",
+        note: "สร้างอัตโนมัติจากรูปที่ส่งใน LINE กลุ่มงาน",
+      })
+      .select("id,survey_no,customer_name,project_name,scheduled_at,created_at")
+      .single();
+    if (createError) throw createError;
+    chosen = created;
+    autoCreated = true;
+  } else if (surveys.length === 1) {
     chosen = surveys[0];
   } else {
     const now = Date.now();
@@ -59,6 +80,11 @@ export async function autoSelectSurveyForWorkGroup({ event, supabase, reply }) {
     updated_at: new Date().toISOString(),
   }, { onConflict: "group_id" });
   if (upsertError) throw upsertError;
+
+  if (autoCreated) {
+    await reply(event.replyToken, `✅ สร้างงานสำรวจให้อัตโนมัติแล้ว\n${chosen.survey_no}\nส่งรูปต่อได้เลย ระบบจะเก็บเข้ารายการนี้อัตโนมัติ`);
+    return "created";
+  }
 
   return "selected";
 }
