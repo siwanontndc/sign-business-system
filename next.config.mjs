@@ -4,7 +4,7 @@ const nextConfig = {
   async rewrites() {
     return {
       beforeFiles: [
-        { source: "/api/line/webhook", destination: "/api/line/webhook-v2" },
+        { source: "/api/line/webhook", destination: "/api/line/webhook-v3" },
         {
           source: "/quotations/new",
           has: [{ type: "query", key: "survey", value: "(?<survey>.*)" }],
