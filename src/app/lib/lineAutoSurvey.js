@@ -1,3 +1,5 @@
+const KNOWN_WORK_GROUP_IDS = new Set(["Cf630d4a5d3e49dd721ff3d149f53e88b"]);
+
 function sourceGroupId(event) {
   return event.source?.groupId || event.source?.roomId || null;
 }
@@ -26,7 +28,7 @@ export async function autoSelectSurveyForWorkGroup({ event, supabase, reply }) {
   if (!groupId) return "not_work_group";
 
   const groupName = await getGroupName(groupId);
-  const looksLikeWorkGroup = /(กลุ่มงาน|หน้างาน|ช่าง|ติดตั้ง|ผลิต)/i.test(groupName);
+  const looksLikeWorkGroup = KNOWN_WORK_GROUP_IDS.has(groupId) || /(กลุ่มงาน|หน้างาน|ช่าง|ติดตั้ง|ผลิต)/i.test(groupName);
   if (!looksLikeWorkGroup) return "not_work_group";
 
   const { data: surveys, error } = await supabase
@@ -48,7 +50,7 @@ export async function autoSelectSurveyForWorkGroup({ event, supabase, reply }) {
       .insert({
         survey_no: surveyNo,
         customer_name: "รอระบุลูกค้า (LINE)",
-        project_name: groupName ? `รับรูปจาก ${groupName}` : "งานสำรวจจาก LINE",
+        project_name: groupName ? `รับรูปจาก ${groupName}` : "งานสำรวจจาก LINE กลุ่มงาน",
         status: "surveying",
         note: "สร้างอัตโนมัติจากรูปที่ส่งใน LINE กลุ่มงาน",
       })
