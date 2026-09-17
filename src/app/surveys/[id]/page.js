@@ -20,9 +20,12 @@ export default function SurveyDetailPage(){
   function set(k,v){ setSurvey(x=>({...x,[k]:v})); }
   function chooseCustomer(v){ const c=customers.find(x=>x.id===v); setSurvey(x=>({...x,customer_id:v||null,customer_name:c?(c.company_name||c.contact_name||c.customer_code):x.customer_name,contact_name:c?.contact_name||x.contact_name,phone:c?.phone||x.phone})); }
   function localDateTime(v){ if(!v)return''; const d=new Date(v),z=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}-${z(d.getMonth()+1)}-${z(d.getDate())}T${z(d.getHours())}:${z(d.getMinutes())}`; }
+  async function persistSurvey(nextStatus=survey.status){
+    return supabase.from('site_surveys').update({customer_id:survey.customer_id||null,customer_name:survey.customer_name,contact_name:survey.contact_name||null,phone:survey.phone||null,scheduled_at:survey.scheduled_at?new Date(survey.scheduled_at).toISOString():null,project_name:survey.project_name||null,location_text:survey.location_text||null,dimensions:survey.dimensions||null,electrical_notes:survey.electrical_notes||null,access_notes:survey.access_notes||null,note:survey.note||null,status:nextStatus,updated_at:new Date().toISOString()}).eq('id',id);
+  }
   async function save(){
     setSaving(true);
-    const {error}=await supabase.from('site_surveys').update({customer_id:survey.customer_id||null,customer_name:survey.customer_name,contact_name:survey.contact_name||null,phone:survey.phone||null,scheduled_at:survey.scheduled_at?new Date(survey.scheduled_at).toISOString():null,project_name:survey.project_name||null,location_text:survey.location_text||null,dimensions:survey.dimensions||null,electrical_notes:survey.electrical_notes||null,access_notes:survey.access_notes||null,note:survey.note||null,status:survey.status,updated_at:new Date().toISOString()}).eq('id',id);
+    const {error}=await persistSurvey();
     setSaving(false); if(error) alert(error.message); else alert('บันทึกงานสำรวจแล้ว');
   }
   async function upload(e){
@@ -41,11 +44,18 @@ export default function SurveyDetailPage(){
   }
   async function remove(item){ if(!confirm('ลบรูปนี้?'))return; await supabase.storage.from('job-media').remove([item.storage_path]); await supabase.from('survey_media').delete().eq('id',item.id); load(); }
   function url(p){ return supabase.storage.from('job-media').getPublicUrl(p).data.publicUrl; }
-  async function toQuotation(){ if(!survey.customer_id)return alert('กรุณาเลือกลูกค้าในระบบก่อนสร้างใบเสนอราคา'); await supabase.from('site_surveys').update({status:'ready_to_quote',updated_at:new Date().toISOString()}).eq('id',id); router.push(`/quotations/new?survey=${id}`); }
+  async function toQuotation(){
+    if(!survey.customer_id)return alert('กรุณาเลือกลูกค้าในระบบก่อนสร้างใบเสนอราคา');
+    setSaving(true);
+    const {error}=await persistSurvey('ready_to_quote');
+    setSaving(false);
+    if(error) return alert('บันทึกงานสำรวจไม่สำเร็จ: '+error.message);
+    router.push(`/surveys/${id}/quotation`);
+  }
   const inp={width:'100%',boxSizing:'border-box',padding:'10px 12px',border:'1px solid #d1d5db',borderRadius:8};
   if(loading||!survey)return <main style={{padding:30}}>กำลังโหลด...</main>;
   return <main style={{minHeight:'100vh',background:'#f3f4f6',padding:24,color:'#111827'}}><div style={{maxWidth:1400,margin:'0 auto'}}>
-    <div style={{display:'flex',justifyContent:'space-between',gap:12,alignItems:'center',flexWrap:'wrap',marginBottom:16}}><div><div style={{color:'#be185d',fontWeight:900}}>{survey.survey_no}</div><h1 style={{margin:'3px 0'}}>📍 {survey.customer_name}</h1><div style={{color:'#6b7280'}}>{survey.project_name||'งานสำรวจหน้างาน'}</div></div><div style={{display:'flex',gap:8,flexWrap:'wrap'}}><button onClick={()=>router.push('/surveys')}>← งานสำรวจ</button><button onClick={toQuotation} style={{padding:'10px 14px',border:0,borderRadius:8,background:'#111827',color:'white',fontWeight:900}}>สร้างใบเสนอราคาจากงานนี้ →</button></div></div>
+    <div style={{display:'flex',justifyContent:'space-between',gap:12,alignItems:'center',flexWrap:'wrap',marginBottom:16}}><div><div style={{color:'#be185d',fontWeight:900}}>{survey.survey_no}</div><h1 style={{margin:'3px 0'}}>📍 {survey.customer_name}</h1><div style={{color:'#6b7280'}}>{survey.project_name||'งานสำรวจหน้างาน'}</div></div><div style={{display:'flex',gap:8,flexWrap:'wrap'}}><button onClick={()=>router.push('/surveys')}>← งานสำรวจ</button><button onClick={toQuotation} disabled={saving} style={{padding:'10px 14px',border:0,borderRadius:8,background:'#111827',color:'white',fontWeight:900}}>{survey.quotation_id?'เปิดใบเสนอราคาที่เชื่อมแล้ว →':'สร้างใบเสนอราคาจากงานนี้ →'}</button></div></div>
     <div style={{display:'grid',gridTemplateColumns:'minmax(320px,460px) 1fr',gap:18,alignItems:'start'}}>
       <section style={{background:'white',padding:18,borderRadius:14,border:'1px solid #e5e7eb'}}><h2 style={{marginTop:0}}>ข้อมูลสำรวจ</h2>
         <label>ลูกค้าในระบบ<select style={{...inp,marginTop:5,marginBottom:10}} value={survey.customer_id||''} onChange={e=>chooseCustomer(e.target.value)}><option value=''>-- ยังไม่ผูกลูกค้า --</option>{customers.map(c=><option key={c.id} value={c.id}>{c.customer_code||'-'} — {c.company_name||c.contact_name}</option>)}</select></label>
