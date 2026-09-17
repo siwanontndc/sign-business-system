@@ -110,8 +110,7 @@ export default function JobMediaPage() {
   function openPicker() {
     if (!fileInputRef.current || !selectedQuotationId || saving) return;
     fileInputRef.current.accept = currentType.accept;
-    if (currentType.key !== "artwork") fileInputRef.current.setAttribute("capture", "environment");
-    else fileInputRef.current.removeAttribute("capture");
+    fileInputRef.current.removeAttribute("capture");
     fileInputRef.current.click();
   }
 
@@ -213,8 +212,8 @@ export default function JobMediaPage() {
         <span style={s.icon}>{type.icon}</span><span>{type.label}</span><b style={s.count}>{countOf(type.key)}</b>
       </button>)}</div>
 
-      <div style={s.step}>2. เลือกไฟล์ / ถ่ายรูป</div>
-      <button style={{...s.pick,...(!selectedQuotationId?s.disabled:{})}} onClick={openPicker} disabled={!selectedQuotationId || saving}>{currentType.icon} เลือก{currentType.label} / ถ่ายรูป</button>
+      <div style={s.step}>2. เลือกจากคลังภาพ / ถ่ายรูป / เลือกไฟล์</div>
+      <button style={{...s.pick,...(!selectedQuotationId?s.disabled:{})}} onClick={openPicker} disabled={!selectedQuotationId || saving}>{currentType.icon} เลือก{currentType.label}</button>
       <input ref={fileInputRef} type="file" multiple hidden onChange={stageFiles} />
 
       {draftFiles.length > 0 && <div style={s.previewGrid}>{draftFiles.map((x) => <div key={x.id} style={s.previewCard}>
