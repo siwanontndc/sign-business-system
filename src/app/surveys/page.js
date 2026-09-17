@@ -5,7 +5,7 @@ import { supabase } from "../lib/supabase";
 
 export default function SurveysPage(){
  const router=useRouter();
- const[loading,setLoading]=useState(true),[saving,setSaving]=useState(false),[surveys,setSurveys]=useState([]),[customers,setCustomers]=useState([]);
+ const[loading,setLoading]=useState(true),[saving,setSaving]=useState(false),[surveys,setSurveys]=useState([]),[customers,setCustomers]=useState([]),[showCancelled,setShowCancelled]=useState(false);
  const[customerId,setCustomerId]=useState(""),[customerName,setCustomerName]=useState(""),[contactName,setContactName]=useState(""),[phone,setPhone]=useState(""),[scheduledAt,setScheduledAt]=useState(""),[projectName,setProjectName]=useState(""),[locationText,setLocationText]=useState(""),[note,setNote]=useState("");
  useEffect(()=>{load()},[]);
  async function load(){
@@ -28,11 +28,26 @@ export default function SurveysPage(){
    if(error)throw error;router.push(`/surveys/${data.id}`)
   }catch(e){alert("สร้างงานสำรวจไม่สำเร็จ: "+(e?.message||"เกิดข้อผิดพลาด"))}finally{setSaving(false)}
  }
+ async function cancelSurvey(e,s){
+  e.stopPropagation();
+  if(!confirm(`ยกเลิก ${s.survey_no} ?\nข้อมูลและรูปจะยังเก็บไว้`))return;
+  const {error}=await supabase.from('site_surveys').update({status:'cancelled',updated_at:new Date().toISOString()}).eq('id',s.id);
+  await supabase.from('survey_line_contexts').delete().eq('survey_id',s.id);
+  if(error)return alert('ยกเลิกไม่สำเร็จ: '+error.message);
+  setSurveys(x=>x.map(v=>v.id===s.id?{...v,status:'cancelled'}:v));
+ }
+ async function restoreSurvey(e,s){
+  e.stopPropagation();
+  const {error}=await supabase.from('site_surveys').update({status:'surveying',updated_at:new Date().toISOString()}).eq('id',s.id);
+  if(error)return alert('เปิดงานไม่สำเร็จ: '+error.message);
+  setSurveys(x=>x.map(v=>v.id===s.id?{...v,status:'surveying'}:v));
+ }
  function fmt(dt){if(!dt)return"";return new Date(dt).toLocaleString("th-TH",{dateStyle:"medium",timeStyle:"short"})}
  const inp={width:"100%",boxSizing:"border-box",padding:"10px 12px",border:"1px solid #d1d5db",borderRadius:8};
+ const visibleSurveys=showCancelled?surveys:surveys.filter(s=>s.status!=="cancelled");
  if(loading)return <main style={{padding:30}}>กำลังโหลด...</main>;
  return <main style={{minHeight:"100vh",background:"#f3f4f6",padding:24,color:"#111827"}}><div style={{maxWidth:1400,margin:"0 auto"}}>
-  <div style={{marginBottom:18}}><h1 style={{margin:0}}>📍 สำรวจหน้างานก่อนเสนอราคา</h1><p style={{color:"#6b7280"}}>เก็บรูปและข้อมูลหน้างานได้ก่อนมีใบเสนอราคา</p></div>
+  <div style={{display:'flex',justifyContent:'space-between',gap:12,alignItems:'center',flexWrap:'wrap',marginBottom:18}}><div><h1 style={{margin:0}}>📍 สำรวจหน้างานก่อนเสนอราคา</h1><p style={{color:"#6b7280"}}>เก็บรูปและข้อมูลหน้างานได้ก่อนมีใบเสนอราคา</p></div><label style={{display:'flex',alignItems:'center',gap:8,fontWeight:800}}><input type="checkbox" checked={showCancelled} onChange={e=>setShowCancelled(e.target.checked)}/> แสดงงานที่ยกเลิก</label></div>
   <div style={{display:"grid",gridTemplateColumns:"minmax(320px,430px) 1fr",gap:18,alignItems:"start"}}>
    <section style={{background:"white",padding:18,borderRadius:14,border:"1px solid #e5e7eb"}}><h2 style={{marginTop:0}}>สร้างงานสำรวจใหม่</h2>
     <label>ลูกค้าเดิม (ถ้ามี)<select style={{...inp,marginTop:5,marginBottom:12}} value={customerId} onChange={e=>chooseCustomer(e.target.value)}><option value="">-- กรอกเอง --</option>{customers.map(c=><option key={c.id} value={c.id}>{c.customer_code||"-"} — {c.company_name||c.contact_name||"ไม่ระบุชื่อ"}</option>)}</select></label>
@@ -45,7 +60,7 @@ export default function SurveysPage(){
     <label>หมายเหตุ<textarea style={{...inp,marginTop:5,minHeight:80}} value={note} onChange={e=>setNote(e.target.value)}/></label>
     <button disabled={saving} onClick={createSurvey} style={{width:"100%",marginTop:14,padding:12,border:0,borderRadius:9,background:"#be185d",color:"white",fontWeight:900}}>{saving?"กำลังสร้าง...":"＋ สร้างงานสำรวจ"}</button>
    </section>
-   <section style={{background:"white",padding:18,borderRadius:14,border:"1px solid #e5e7eb"}}><h2 style={{marginTop:0}}>งานสำรวจทั้งหมด</h2><div style={{display:"grid",gap:10}}>{surveys.length===0&&<div style={{color:"#6b7280"}}>ยังไม่มีงานสำรวจ</div>}{surveys.map(s=><button key={s.id} onClick={()=>router.push(`/surveys/${s.id}`)} style={{textAlign:"left",padding:14,border:"1px solid #e5e7eb",borderRadius:12,background:"white",cursor:"pointer"}}><div style={{fontWeight:900,color:"#be185d"}}>{s.survey_no}</div><div style={{fontSize:17,fontWeight:800}}>{s.customer_name}</div><div>{s.project_name||"ยังไม่ระบุชื่องาน"}</div><div style={{fontSize:12,color:"#6b7280",marginTop:4}}>{s.location_text||"-"} • {s.scheduled_at?`นัด ${fmt(s.scheduled_at)} • `:""}{s.status==="quoted"?"ออกใบเสนอราคาแล้ว":s.status==="ready_to_quote"?"พร้อมเสนอราคา":"กำลังสำรวจ"}</div></button>)}</div></section>
+   <section style={{background:"white",padding:18,borderRadius:14,border:"1px solid #e5e7eb"}}><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:10}}><h2 style={{marginTop:0}}>งานสำรวจ</h2><div style={{fontSize:13,color:'#6b7280'}}>{visibleSurveys.length} งาน</div></div><div style={{display:"grid",gap:10}}>{visibleSurveys.length===0&&<div style={{color:"#6b7280"}}>ยังไม่มีงานสำรวจ</div>}{visibleSurveys.map(s=><div key={s.id} onClick={()=>router.push(`/surveys/${s.id}`)} style={{textAlign:"left",padding:14,border:s.status==='cancelled'?'1px solid #fecaca':'1px solid #e5e7eb',borderRadius:12,background:s.status==='cancelled'?'#fff7f7':'white',cursor:"pointer"}}><div style={{display:'flex',justifyContent:'space-between',gap:10,alignItems:'start'}}><div><div style={{fontWeight:900,color:s.status==='cancelled'?'#991b1b':'#be185d'}}>{s.survey_no}</div><div style={{fontSize:17,fontWeight:800}}>{s.customer_name}</div><div>{s.project_name||"ยังไม่ระบุชื่องาน"}</div></div>{s.status==='cancelled'?<button onClick={e=>restoreSurvey(e,s)} style={{border:0,borderRadius:8,padding:'7px 9px',background:'#dcfce7',color:'#166534',fontWeight:900}}>เปิดอีกครั้ง</button>:<button onClick={e=>cancelSurvey(e,s)} style={{border:0,borderRadius:8,padding:'7px 9px',background:'#fee2e2',color:'#991b1b',fontWeight:900}}>ยกเลิก</button>}</div><div style={{fontSize:12,color:"#6b7280",marginTop:4}}>{s.location_text||"-"} • {s.scheduled_at?`นัด ${fmt(s.scheduled_at)} • `:""}{s.status==="cancelled"?"ยกเลิก":s.status==="quoted"?"ออกใบเสนอราคาแล้ว":s.status==="ready_to_quote"?"พร้อมเสนอราคา":"กำลังสำรวจ"}</div></div>)}</div></section>
   </div>
  </div></main>
 }
