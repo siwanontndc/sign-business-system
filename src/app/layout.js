@@ -6,6 +6,7 @@ import DesktopWorkflowNav from "./DesktopWorkflowNav";
 import DesktopSidebarMediaLink from "./DesktopSidebarMediaLink";
 import DesktopSidebarKpiLink from "./DesktopSidebarKpiLink";
 import HomeButton from "./HomeButton";
+import DocumentJpgButton from "./DocumentJpgButton";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
@@ -37,6 +38,7 @@ export default function RootLayout({ children }) {
       <body className={`${geistSans.variable} ${geistMono.variable}`}>
         <AuthGuard>
           {children}
+          <DocumentJpgButton />
           <HomeButton />
           <DesktopSidebarKpiLink />
           <DesktopSidebarMediaLink />
