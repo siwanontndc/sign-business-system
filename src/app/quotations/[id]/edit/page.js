@@ -47,7 +47,7 @@ export default function EditQuotationPage(){
   const [saving,setSaving]=useState(false);
   const [catalog,setCatalog]=useState(FALLBACK_CATALOG);
   const [customers,setCustomers]=useState([]);
-  const [quotation,setQuotation]=useState({quotation_no:"",customer_id:"",project_name:"",quotation_date:"",valid_days:30,discount:0,vat_percent:0,note:"",status:"draft"});
+  const [quotation,setQuotation]=useState({quotation_no:"",customer_id:"",customer_name:"",contact_name:"",customer_phone:"",customer_email:"",project_name:"",quotation_date:"",valid_days:30,discount:0,vat_percent:0,note:"",status:"draft"});
   const [items,setItems]=useState([]);
 
   useEffect(()=>{ if(id) loadPage(); },[id]);
@@ -73,14 +73,14 @@ export default function EditQuotationPage(){
     const [qRes,iRes,cRes,pRes]=await Promise.all([
       supabase.from("quotations").select("*").eq("id",id).single(),
       supabase.from("quotation_items").select("*").eq("quotation_id",id).order("created_at",{ascending:true}),
-      supabase.from("customers").select("id,customer_code,company_name,contact_name").order("created_at",{ascending:false}),
+      supabase.from("customers").select("id,customer_code,company_name,contact_name,phone,email").order("created_at",{ascending:false}),
       supabase.from("product_catalog").select("product_key,name,calculation,unit,unit_price,tier_min_qty,tier_unit_price,is_active,sort_order").eq("is_active",true).order("sort_order").order("name")
     ]);
     if(qRes.error){ alert("โหลดใบเสนอราคาไม่สำเร็จ: "+qRes.error.message); router.replace("/quotations/list"); return; }
     const active = !pRes.error && pRes.data?.length ? pRes.data : FALLBACK_CATALOG;
     setCatalog(active); setCustomers(cRes.error?[]:(cRes.data||[]));
     const q=qRes.data;
-    setQuotation({quotation_no:q.quotation_no||"",customer_id:q.customer_id||"",project_name:q.project_name||"",quotation_date:toDateInputValue(q.quotation_date),valid_days:q.valid_days??30,discount:q.discount??0,vat_percent:q.vat_percent??0,note:q.note||"",status:q.status||"draft"});
+    setQuotation({quotation_no:q.quotation_no||"",customer_id:q.customer_id||"",customer_name:q.customer_name||"",contact_name:q.contact_name||"",customer_phone:q.customer_phone||"",customer_email:q.customer_email||"",project_name:q.project_name||"",quotation_date:toDateInputValue(q.quotation_date),valid_days:q.valid_days??30,discount:q.discount??0,vat_percent:q.vat_percent??0,note:q.note||"",status:q.status||"draft"});
     const rows=iRes.error?[]:(iRes.data||[]);
     setItems(rows.length?rows.map(r=>makeItem(findProductForExisting(r,active),r)):[makeItem(active[0])]);
     setLoading(false);
@@ -114,13 +114,18 @@ export default function EditQuotationPage(){
   function updateItem(clientId,field,value){ setItems(old=>old.map(i=>i.clientId===clientId?recalc({...i,[field]:value}):i)); }
   function addItem(){ setItems(old=>[...old,makeItem(catalog[0]||FALLBACK_CATALOG[0])]); }
   function removeItem(clientId){ if(items.length===1)return alert("ใบเสนอราคาต้องมีอย่างน้อย 1 รายการ"); setItems(old=>old.filter(i=>i.clientId!==clientId)); }
+  function changeCustomer(customerId){
+    if(!customerId){setQuotation(q=>({...q,customer_id:""}));return;}
+    const c=customers.find(x=>x.id===customerId);
+    setQuotation(q=>({...q,customer_id:customerId,customer_name:c?.company_name||c?.contact_name||"",contact_name:c?.contact_name||"",customer_phone:c?.phone||"",customer_email:c?.email||""}));
+  }
 
   const subtotal=useMemo(()=>items.reduce((s,i)=>s+Number(calc(i).amount||0),0),[items,catalog]);
   const discount=Number(quotation.discount||0), afterDiscount=Math.max(subtotal-discount,0), vatAmount=afterDiscount*(Number(quotation.vat_percent||0)/100), grandTotal=afterDiscount+vatAmount;
 
   async function handleSave(){
     if(saving)return;
-    if(!quotation.customer_id)return alert("กรุณาเลือกลูกค้า");
+    if(!quotation.customer_id&&!String(quotation.customer_name||"").trim())return alert("กรุณาเลือกลูกค้า หรือกรอกชื่อลูกค้านอกระบบ");
     if(!quotation.project_name.trim())return alert("กรุณากรอกชื่อโครงการ / ชื่องาน");
     for(let n=0;n<items.length;n++){
       const i=items[n],p=getProduct(i.product_key);
@@ -130,7 +135,7 @@ export default function EditQuotationPage(){
     }
     setSaving(true);
     try{
-      const {error:qErr}=await supabase.from("quotations").update({customer_id:quotation.customer_id,project_name:quotation.project_name.trim(),quotation_date:quotation.quotation_date,valid_days:Number(quotation.valid_days||30),subtotal,discount,vat_percent:Number(quotation.vat_percent||0),vat_amount:vatAmount,grand_total:grandTotal,note:quotation.note||"",updated_at:new Date().toISOString()}).eq("id",id);
+      const {error:qErr}=await supabase.from("quotations").update({customer_id:quotation.customer_id||null,customer_name:String(quotation.customer_name||"").trim()||null,contact_name:String(quotation.contact_name||"").trim()||null,customer_phone:String(quotation.customer_phone||"").trim()||null,customer_email:String(quotation.customer_email||"").trim()||null,project_name:quotation.project_name.trim(),quotation_date:quotation.quotation_date,valid_days:Number(quotation.valid_days||30),subtotal,discount,vat_percent:Number(quotation.vat_percent||0),vat_amount:vatAmount,grand_total:grandTotal,note:quotation.note||"",updated_at:new Date().toISOString()}).eq("id",id);
       if(qErr)throw qErr;
       const {error:dErr}=await supabase.from("quotation_items").delete().eq("quotation_id",id); if(dErr)throw dErr;
       const rows=items.map((i,index)=>{ const r=calc(i); const s=parseCmSize(i.size); return {quotation_id:id,description:i.description.trim(),size:i.size.trim()||null,width:s?.width||null,height:s?.height||null,quantity:Number(i.quantity||0),unit:i.unit||"งาน",unit_price:Number(r.price||0),amount:Number(r.amount||0),line_total:Number(r.amount||0),sort_order:index+1}; });
@@ -151,7 +156,8 @@ export default function EditQuotationPage(){
       <label>เลขที่ใบเสนอราคา<input style={{...inputStyle,marginTop:6}} value={quotation.quotation_no} readOnly/></label>
       <label>วันที่เสนอราคา<input type="date" style={{...inputStyle,marginTop:6}} value={quotation.quotation_date} onChange={e=>setQuotation({...quotation,quotation_date:e.target.value})}/></label>
       <label>ยืนราคา (วัน)<input type="number" min="1" style={{...inputStyle,marginTop:6}} value={quotation.valid_days} onChange={e=>setQuotation({...quotation,valid_days:e.target.value})}/></label>
-      <label>ลูกค้า *<select style={{...inputStyle,marginTop:6}} value={quotation.customer_id} onChange={e=>setQuotation({...quotation,customer_id:e.target.value})}><option value="">-- เลือกลูกค้า --</option>{customers.map(c=><option key={c.id} value={c.id}>{c.customer_code||"-"} - {c.company_name||c.contact_name||"ไม่ระบุชื่อ"}</option>)}</select></label>
+      <label>ลูกค้า<select style={{...inputStyle,marginTop:6}} value={quotation.customer_id} onChange={e=>changeCustomer(e.target.value)}><option value="">-- ลูกค้านอกระบบ / กรอกเอง --</option>{customers.map(c=><option key={c.id} value={c.id}>{c.customer_code||"-"} - {c.company_name||c.contact_name||"ไม่ระบุชื่อ"}</option>)}</select></label>
+      {!quotation.customer_id&&<><label>ชื่อลูกค้านอกระบบ *<input style={{...inputStyle,marginTop:6}} value={quotation.customer_name} onChange={e=>setQuotation({...quotation,customer_name:e.target.value})}/></label><label>ผู้ติดต่อ<input style={{...inputStyle,marginTop:6}} value={quotation.contact_name} onChange={e=>setQuotation({...quotation,contact_name:e.target.value})}/></label><label>โทรศัพท์<input style={{...inputStyle,marginTop:6}} value={quotation.customer_phone} onChange={e=>setQuotation({...quotation,customer_phone:e.target.value})}/></label><label>อีเมล<input style={{...inputStyle,marginTop:6}} value={quotation.customer_email} onChange={e=>setQuotation({...quotation,customer_email:e.target.value})}/></label></>}
       <label style={{gridColumn:"span 2"}}>ชื่อโครงการ / งาน *<input style={{...inputStyle,marginTop:6}} value={quotation.project_name} onChange={e=>setQuotation({...quotation,project_name:e.target.value})}/></label>
     </div></section>
 
