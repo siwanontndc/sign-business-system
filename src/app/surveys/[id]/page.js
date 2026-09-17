@@ -138,7 +138,14 @@ export default function SurveyDetailPage(){
 
   async function remove(item){ if(!confirm('ลบรูปนี้?'))return; await supabase.storage.from('job-media').remove([item.storage_path]); await supabase.from('survey_media').delete().eq('id',item.id); load(); }
   function url(p){ return supabase.storage.from('job-media').getPublicUrl(p).data.publicUrl; }
-  async function toQuotation(){ if(!survey.customer_id)return alert('กรุณาเลือกลูกค้าในระบบก่อนสร้างใบเสนอราคา'); setSaving(true); const {error}=await persistSurvey('ready_to_quote'); setSaving(false); if(error) return alert('บันทึกงานสำรวจไม่สำเร็จ: '+error.message); router.push(`/surveys/${id}/quotation`); }
+  async function toQuotation(){
+    if(!String(survey.customer_name||'').trim())return alert('กรุณากรอกชื่อลูกค้าก่อนสร้างใบเสนอราคา');
+    setSaving(true);
+    const {error}=await persistSurvey('ready_to_quote');
+    setSaving(false);
+    if(error) return alert('บันทึกงานสำรวจไม่สำเร็จ: '+error.message);
+    router.push(`/surveys/${id}/quotation`);
+  }
   async function cancelSurvey(){
     if(!confirm('ยกเลิกงานสำรวจนี้?\nข้อมูลและรูปจะยังเก็บไว้ และสามารถเปิดกลับภายหลังได้'))return;
     setSaving(true);
@@ -159,7 +166,8 @@ export default function SurveyDetailPage(){
     <div style={{display:'flex',justifyContent:'space-between',gap:12,alignItems:'center',flexWrap:'wrap',marginBottom:16}}><div><div style={{color:'#be185d',fontWeight:900}}>{survey.survey_no}</div><h1 style={{margin:'3px 0'}}>📍 {survey.customer_name}</h1><div style={{color:'#6b7280'}}>{survey.project_name||'งานสำรวจหน้างาน'} {survey.status==='cancelled'&&<b style={{color:'#b91c1c'}}>• ยกเลิกแล้ว</b>}</div></div><div style={{display:'flex',gap:8,flexWrap:'wrap'}}><button onClick={()=>router.push('/surveys')}>← งานสำรวจ</button>{survey.status==='cancelled'?<button onClick={restoreSurvey} disabled={saving} style={{padding:'10px 14px',border:0,borderRadius:8,background:'#166534',color:'white',fontWeight:900}}>↩ เปิดงานนี้อีกครั้ง</button>:<><button onClick={cancelSurvey} disabled={saving} style={{padding:'10px 14px',border:0,borderRadius:8,background:'#fee2e2',color:'#991b1b',fontWeight:900}}>ยกเลิกงานสำรวจ</button><button onClick={toQuotation} disabled={saving} style={{padding:'10px 14px',border:0,borderRadius:8,background:'#111827',color:'white',fontWeight:900}}>{survey.quotation_id?'เปิดใบเสนอราคาที่เชื่อมแล้ว →':'สร้างใบเสนอราคาจากงานนี้ →'}</button></>}</div></div>
     <div style={{display:'grid',gridTemplateColumns:'minmax(320px,460px) 1fr',gap:18,alignItems:'start'}}>
       <section style={{background:'white',padding:18,borderRadius:14,border:'1px solid #e5e7eb'}}><h2 style={{marginTop:0}}>ข้อมูลสำรวจ</h2>
-        <label>ลูกค้าในระบบ<select style={{...inp,marginTop:5,marginBottom:10}} value={survey.customer_id||''} onChange={e=>chooseCustomer(e.target.value)}><option value=''>-- ยังไม่ผูกลูกค้า --</option>{customers.map(c=><option key={c.id} value={c.id}>{c.customer_code||'-'} — {c.company_name||c.contact_name}</option>)}</select></label>
+        <label>ลูกค้าในระบบ<select style={{...inp,marginTop:5,marginBottom:10}} value={survey.customer_id||''} onChange={e=>chooseCustomer(e.target.value)}><option value=''>-- ลูกค้านอกระบบ / กรอกเอง --</option>{customers.map(c=><option key={c.id} value={c.id}>{c.customer_code||'-'} — {c.company_name||c.contact_name}</option>)}</select></label>
+        {!survey.customer_id&&<div style={{margin:'-2px 0 10px',padding:'8px 10px',borderRadius:8,background:'#fff7ed',color:'#9a3412',fontSize:13}}>ลูกค้านอกระบบ: ใช้ชื่อ/ผู้ติดต่อ/โทรศัพท์ด้านล่างสร้างใบเสนอราคาได้เลย ไม่ต้องเพิ่มเข้าทะเบียนลูกค้า</div>}
         {[['customer_name','ชื่อลูกค้า'],['contact_name','ผู้ติดต่อ'],['phone','โทรศัพท์'],['project_name','ชื่องาน'],['location_text','สถานที่'],['dimensions','ขนาด/ระยะวัด'],['electrical_notes','ระบบไฟ'],['access_notes','ทางเข้าติดตั้ง/รถกระเช้า']].map(([k,l])=><label key={k} style={{display:'block',marginBottom:10}}>{l}<input style={{...inp,marginTop:5}} value={survey[k]||''} onChange={e=>set(k,e.target.value)}/></label>)}
         <label style={{display:'block',marginBottom:10}}>วันที่นัดสำรวจ<input type='datetime-local' style={{...inp,marginTop:5}} value={localDateTime(survey.scheduled_at)} onChange={e=>set('scheduled_at',e.target.value)}/></label>
         <label>หมายเหตุ<textarea style={{...inp,marginTop:5,minHeight:90}} value={survey.note||''} onChange={e=>set('note',e.target.value)}/></label>
