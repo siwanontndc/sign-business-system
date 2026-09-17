@@ -10,6 +10,41 @@ const DOCS = [
   { prefix: "/receipts/", table: "receipts", noField: "receipt_no", title: "ใบเสร็จรับเงิน" },
 ];
 
+const COMPANY_REPLACEMENTS = new Map([
+  ["ร้าน ธานี แอ็ดเวอร์ไทซิ่ง", "บริษัท ธานี แอดเวอร์ไทซิ่ง จำกัด"],
+  ["14/15 ม.8 ต.บางกระสั้น อ.บางปะอิน จ.พระนครศรีอยุธยา 13160", "1/5 ม.15 ถ.สันโค้งน้อย ต.รอบเวียง อ.เมืองเชียงราย จ.เชียงราย 57000"],
+  ["เลขประจำตัวผู้เสียภาษี: 3149900246546", "ทะเบียนเลขที่: 0575565002465"],
+  ["โทร: 089-779-7319", "โทร. 093-131-8183"],
+  ["อีเมล:", ""],
+  ["อีเมล: siwanon_s@hotmail.com", ""],
+  ["siwanon_s@hotmail.com", ""],
+  ["LINE: 0931318183", ""],
+]);
+
+function normalizeCompanyHeader() {
+  const root = document.querySelector(".print-page");
+  if (!root) return;
+
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const nodes = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode);
+
+  for (const node of nodes) {
+    const raw = node.nodeValue || "";
+    const trimmed = raw.trim();
+    if (!trimmed) continue;
+    if (!COMPANY_REPLACEMENTS.has(trimmed)) continue;
+
+    const replacement = COMPANY_REPLACEMENTS.get(trimmed);
+    if (!replacement) {
+      node.nodeValue = "";
+      continue;
+    }
+
+    node.nodeValue = raw.replace(trimmed, replacement);
+  }
+}
+
 function cleanFilePart(value) {
   return String(value || "")
     .trim()
@@ -76,12 +111,26 @@ export default function DocumentJpgButton() {
   }, [route]);
 
   useEffect(() => {
+    if (!route) return;
+
+    normalizeCompanyHeader();
+    const timer = window.setInterval(normalizeCompanyHeader, 300);
+    const stopTimer = window.setTimeout(() => window.clearInterval(timer), 5000);
+
+    return () => {
+      window.clearInterval(timer);
+      window.clearTimeout(stopTimer);
+    };
+  }, [route]);
+
+  useEffect(() => {
     return () => {
       document.title = "SIGN BUSINESS Management System";
     };
   }, []);
 
   async function makeJpegBlob() {
+    normalizeCompanyHeader();
     const target = document.querySelector(".print-page");
     if (!target) throw new Error("ไม่พบพื้นที่เอกสารสำหรับสร้าง JPG");
     const html2canvas = (await import("html2canvas")).default;
