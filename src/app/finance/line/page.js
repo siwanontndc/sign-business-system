@@ -41,7 +41,7 @@ function categoryForDirection(old,dir){
 function validCategory(v,dir){return dir==="income"?INCOME.includes(v):dir==="expense"?EXPENSE.includes(v):false;}
 
 export default function LineFinancePage(){
-  const[rows,setRows]=useState([]),[drafts,setDrafts]=useState({}),[media,setMedia]=useState({}),[loading,setLoading]=useState(true),[busy,setBusy]=useState(false),[reading,setReading]=useState(null),[progress,setProgress]=useState(0),[error,setError]=useState(""),[filter,setFilter]=useState("pending"),[raw,setRaw]=useState({}),[notice,setNotice]=useState({}),[duplicates,setDuplicates]=useState({});
+  const[rows,setRows]=useState([]),[drafts,setDrafts]=useState({}),[media,setMedia]=useState({}),[loading,setLoading]=useState(true),[busy,setBusy]=useState(false),[reading,setReading]=useState(null),[progress,setProgress]=useState(0),[error,setError]=useState(""),[filter,setFilter]=useState("pending"),[raw,setRaw]=useState({}),[notice,setNotice]=useState({}),[duplicates,setDuplicates]=useState({}),[ledgerRows,setLedgerRows]=useState({});
 
   async function load(){
     setLoading(true);setError("");
@@ -97,6 +97,8 @@ export default function LineFinancePage(){
       const{data,error:e}=await supabase.storage.from("line-account").download(r.storage_path);if(e)throw e;
       const result=await readSlipLocally(data,p=>setProgress(p));
       setRaw(p=>({...p,[r.id]:result.text}));
+      const extractedLedger=Array.isArray(result.fields?.ledger_rows)?result.fields.ledger_rows.filter(x=>x?.description||goodAmount(x?.amount)):[];
+      setLedgerRows(p=>({...p,[r.id]:extractedLedger}));
       let nextDraft=null;
       setDrafts(p=>{
         const old=p[r.id]||initial(r),f=result.fields;
@@ -135,12 +137,20 @@ export default function LineFinancePage(){
       if(!f.direction)missing.push("ประเภท");
       if(!goodAmount(f.amount))missing.push("จำนวนเงิน");
       if(!f.transaction_date)missing.push("วันที่");
-      const source="AI + OCR";
-      setNotice(p=>({...p,[r.id]:missing.length?`${source}: ยังไม่ยืนยัน ${missing.join(" / ")} กรุณาตรวจสอบ`:`${source}: อ่านข้อมูลแล้ว กรุณาตรวจสอบก่อนบันทึก`}));
+      const source=f.document_type==="handwritten_ledger"?"AI ลายมือ + OCR":"AI + OCR";
+      setNotice(p=>({...p,[r.id]:f.document_type==="handwritten_ledger"&&extractedLedger.length?`${source}: พบ ${extractedLedger.length} แถว เลือกแถวด้านล่างเพื่อตรวจและบันทึก`:missing.length?`${source}: ยังไม่ยืนยัน ${missing.join(" / ")} กรุณาตรวจสอบ`:`${source}: อ่านข้อมูลแล้ว กรุณาตรวจสอบก่อนบันทึก`}));
       if(!result.text.trim())setError("OCR ไม่พบข้อความ กรุณาตรวจสอบภาพ");
       setTimeout(()=>{const el=document.getElementById(`slip-form-${r.id}`);if(el){el.scrollIntoView({behavior:"smooth",block:"start"});const first=el.querySelector("input,select,button");setTimeout(()=>first?.focus?.({preventScroll:true}),450);}},250);
     }catch(e){setError("อ่านสลิปไม่สำเร็จ: "+(e.message||"ไม่ทราบสาเหตุ"));}
     finally{setReading(null);}
+  }
+
+  function useLedgerRow(r,row){
+    const direction=row.direction||"";
+    const next={...(drafts[r.id]||initial(r)),direction,amount:goodAmount(row.amount)?String(row.amount):"",category:validCategory(row.category,direction)?row.category:categoryForDirection("",direction),transaction_date:row.transaction_date||date(r.event_at||r.created_at),description:row.description||"",ai_confidence:Number.isFinite(Number(row.confidence))?Number(row.confidence):null};
+    setDrafts(x=>({...x,[r.id]:next}));
+    setNotice(x=>({...x,[r.id]:`เลือกแถวแล้ว: ${direction==="income"?"รายรับ":"รายจ่าย"} ${next.amount||"—"} บาท • ${next.description||"ไม่ระบุรายการ"}`}));
+    setTimeout(()=>document.getElementById(`slip-form-${r.id}`)?.scrollIntoView({behavior:"smooth",block:"start"}),80);
   }
 
   async function review(r,action){
@@ -207,6 +217,7 @@ export default function LineFinancePage(){
           <div style={{minWidth:0}}>{r.status==="pending"?<>
             <button disabled={!!reading||!r.storage_path||!r.mime_type?.startsWith("image/")} onClick={()=>analyze(r)} style={{...btn,background:"#0f172a",color:"white",border:0,width:"100%"}}>{reading===r.id?`กำลังอ่าน ${progress}%`:"อ่านสลิปด้วย AI + OCR"}</button>
             {notice[r.id]&&<div style={{marginTop:8,padding:10,borderRadius:9,background:notice[r.id].includes("ยังไม่")?"#fff7ed":"#ecfdf5",color:notice[r.id].includes("ยังไม่")?"#9a3412":"#166534",fontSize:13}}>{notice[r.id]}<div style={{marginTop:4,fontWeight:800}}>ตรวจ: {d.direction==="income"?"รายรับ":d.direction==="expense"?"รายจ่าย":"—"} • {d.amount||"—"} บาท • {d.transaction_date||"ไม่มีวันที่"}{d.reference_no?` • Ref ${d.reference_no}`:""}</div></div>}{duplicates[r.id]&&<div style={{marginTop:8,padding:12,borderRadius:10,background:"#fef2f2",border:"2px solid #ef4444",color:"#991b1b",fontWeight:800}}>⚠️ รายการซ้ำ — พบรายการที่บันทึกแล้ว {Number(duplicates[r.id].amount||0).toLocaleString("th-TH",{minimumFractionDigits:2})} บาท วันที่ {new Date(duplicates[r.id].transaction_date).toLocaleDateString("th-TH",{timeZone:"Asia/Bangkok"})}{duplicates[r.id].reference_no?` • Ref: ${duplicates[r.id].reference_no}`:""}<div style={{fontSize:12,fontWeight:600,marginTop:4}}>ระบบปิดการบันทึกซ้ำอัตโนมัติ</div></div>}
+            {(ledgerRows[r.id]||[]).length>0&&<div style={{marginTop:10,padding:10,border:"1px solid #c7d2fe",background:"#eef2ff",borderRadius:10}}><div style={{fontWeight:900,marginBottom:8}}>✍️ รายการที่ AI อ่านจากลายมือ</div><div style={{display:"grid",gap:7}}>{ledgerRows[r.id].map((x,i)=><button key={i} type="button" onClick={()=>useLedgerRow(r,x)} style={{textAlign:"left",padding:"9px 10px",border:"1px solid #cbd5e1",background:"white",borderRadius:8,cursor:"pointer"}}><b>{i+1}. {x.direction==="income"?"↑ รายรับ":x.direction==="expense"?"↓ รายจ่าย":"?"}</b> • <b>{x.amount||"อ่านจำนวนไม่ได้"} บาท</b>{x.transaction_date?` • ${x.transaction_date}`:""}<div style={{fontSize:12,color:"#475569",marginTop:2}}>{x.description||"อ่านรายการไม่ชัด"}{Number(x.confidence)>0?` • ความมั่นใจ ${Math.round(Number(x.confidence)*100)}%`:""}</div></button>)}</div><div style={{fontSize:12,color:"#475569",marginTop:7}}>แตะแถวที่ต้องการ ระบบจะใส่ค่าในแบบฟอร์มด้านล่างให้ตรวจอีกครั้งก่อนบันทึก</div></div>}
             {raw[r.id]&&<details style={{marginTop:8}}><summary>ดูข้อความที่ OCR อ่านได้</summary><pre style={{whiteSpace:"pre-wrap",overflowWrap:"anywhere",fontSize:12,background:"#f8fafc",padding:10,borderRadius:8}}>{raw[r.id]}</pre></details>}
             <div id={`slip-form-${r.id}`} className="lf-form-grid" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,220px),1fr))",gap:10,marginTop:12,scrollMarginTop:90}}>
               <label style={{fontWeight:700,minWidth:0}}>ประเภท<div className="lf-direction-buttons" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:5}}><button type="button" onClick={()=>change(r.id,"direction","income")} style={{...btn,border:d.direction==="income"?"2px solid #0b6cff":"1px solid #d1d5db",background:d.direction==="income"?"#0b6cff":"white",color:d.direction==="income"?"white":"#111827"}}>↑ รายรับ</button><button type="button" onClick={()=>change(r.id,"direction","expense")} style={{...btn,border:d.direction==="expense"?"2px solid #e11d48":"1px solid #d1d5db",background:d.direction==="expense"?"#e11d48":"white",color:d.direction==="expense"?"white":"#111827"}}>↓ รายจ่าย</button></div></label>
