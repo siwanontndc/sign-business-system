@@ -56,7 +56,7 @@ export async function POST(req){
     if(!mime.startsWith('image/'))return Response.json({ok:false,error:'INVALID_IMAGE'},{status:400});
     const b64=Buffer.from(await file.arrayBuffer()).toString('base64');
     const dataUrl=`data:${mime};base64,${b64}`;
-    const prompt=`อ่านข้อความจากสลิปธนาคาร/หลักฐานการชำระเงินภาษาไทยในภาพนี้โดยดูจากภาพเป็นหลัก ห้ามเดาจาก OCR ที่ผิด และคืน JSON เท่านั้น
+    const prompt=`อ่านข้อความจากภาพบัญชีภาษาไทยโดยดูจากภาพเป็นหลัก ห้ามเดาจาก OCR ที่ผิด และคืน JSON เท่านั้น\n\nภาพอาจเป็น 2 แบบ:\n1) สลิปธนาคาร/หลักฐานการชำระเงิน 1 รายการ\n2) สมุดหรือแบบฟอร์มรายรับ-รายจ่ายที่เขียนด้วยลายมือและมีหลายแถว\n\nถ้าเป็นตารางรายรับ-รายจ่ายเขียนมือ ให้ดูหัวคอลัมน์ รายการ / รายรับ / รายจ่าย แล้วอ่านทีละแถวจากตำแหน่งในตาราง ไม่รวมยอดหลายแถวเป็นยอดเดียว ห้ามเอาเลขวันที่ เลขลำดับ หรือเลขอ้างอิงมาเป็นจำนวนเงิน
 
 บัญชีของบริษัทเราอาจแสดงชื่อ ธานีแอดเวอร์ไทซิ่ง / ศิวนนท์ หรือเลขบัญชีปิดท้าย 4034, 1403, 8829
 - ถ้าบริษัทเราเป็นผู้โอน/ผู้จ่าย => direction = expense
@@ -76,6 +76,7 @@ export async function POST(req){
 
 JSON fields:
 {
+  "document_type":"slip|handwritten_ledger|unknown",
   "direction":"income|expense|",
   "amount":"",
   "transaction_date":"YYYY-MM-DD|",
@@ -86,8 +87,17 @@ JSON fields:
   "category":"",
   "confidence":0.0,
   "confidence_by_field":{"direction":0.0,"amount":0.0,"transaction_date":0.0,"counterparty":0.0,"bank_name":0.0,"reference_no":0.0,"description":0.0,"category":0.0},
-  "evidence":""
+  "evidence":"",
+  "ledger_rows":[{"description":"","direction":"income|expense","amount":"","transaction_date":"YYYY-MM-DD|","category":"","confidence":0.0}]
 }
+
+กติกา ledger_rows:
+- ใช้เฉพาะเมื่อ document_type = handwritten_ledger
+- 1 แถวในกระดาษ = 1 object
+- ตัวเลขในคอลัมน์รายรับ => income; คอลัมน์รายจ่าย => expense
+- อ่านจำนวนเงินตามลายมือแม้ไม่มีคำว่า บาท
+- วันที่หัวกระดาษใช้กับทุกแถวถ้าแถวไม่มีวันที่เฉพาะ
+- ถ้าข้อความหรือจำนวนเงินไม่ชัด ให้ค่าว่าง/ความมั่นใจต่ำ ห้ามเดา
 
 OCR เดิมจากเครื่อง (ถ้ามี อาจผิด ใช้เป็นข้อมูลประกอบเท่านั้น):
 ${localText}`;
@@ -108,7 +118,9 @@ ${localText}`;
     if(!j)return Response.json({ok:false,error:'AI_INVALID_JSON',detail:'AI returned invalid JSON'},{status:502});
     const direction=normalizeDirection(j.direction);
     const overall=conf(j.confidence);
+    const ledgerRows=Array.isArray(j.ledger_rows)?j.ledger_rows.slice(0,40).map(x=>{const rowDirection=normalizeDirection(x?.direction);return{description:String(x?.description||'').trim().slice(0,240),direction:rowDirection,amount:normalizeAmount(x?.amount),transaction_date:normalizeDate(x?.transaction_date),category:normalizeCategory(String(x?.category||'').trim(),rowDirection),confidence:conf(x?.confidence)};}).filter(x=>x.direction||x.amount||x.description):[];
     const out={
+      document_type:['slip','handwritten_ledger','unknown'].includes(j.document_type)?j.document_type:'unknown',
       direction,
       amount:normalizeAmount(j.amount),
       transaction_date:normalizeDate(j.transaction_date),
@@ -128,7 +140,8 @@ ${localText}`;
         description:fieldConf(j,'description',overall),
         category:fieldConf(j,'category',overall)
       },
-      evidence:String(j.evidence||'').trim().slice(0,500)
+      evidence:String(j.evidence||'').trim().slice(0,500),
+      ledger_rows:ledgerRows
     };
     return Response.json({ok:true,model:body.model,fields:out});
   }catch(e){
