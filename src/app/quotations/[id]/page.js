@@ -4,7 +4,53 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabase";
 
-function fitDocumentToSingleA4() {}
+function fitDocumentToSingleA4() {
+  const page = document.querySelector(".print-page");
+  if (!page) return;
+
+  // Printable A4 area with 6 mm margins: 198 × 285 mm.
+  const PX_PER_MM = 96 / 25.4;
+  const targetWidthPx = 198 * PX_PER_MM;
+  const targetHeightPx = 285 * PX_PER_MM;
+
+  // Reset first so repeated prints always recalculate from the document itself.
+  page.style.removeProperty("zoom");
+  page.style.removeProperty("width");
+  page.style.removeProperty("max-width");
+  page.style.setProperty("width", "198mm", "important");
+  page.style.setProperty("max-width", "none", "important");
+
+  const rect = page.getBoundingClientRect();
+  const contentWidth = Math.max(rect.width, page.scrollWidth || 0);
+  const contentHeight = Math.max(rect.height, page.scrollHeight || 0);
+
+  let scale = Math.min(
+    1,
+    targetWidthPx / Math.max(contentWidth, 1),
+    targetHeightPx / Math.max(contentHeight, 1)
+  );
+
+  // Keep the full document on one A4 page. Wider virtual page + zoom
+  // preserves readable proportions while preventing page 2/3.
+  scale = Math.max(0.35, scale);
+  page.style.setProperty("width", `${198 / scale}mm`, "important");
+  page.style.setProperty("zoom", String(scale), "important");
+}
+
+function resetDocumentPrintFit() {
+  const page = document.querySelector(".print-page");
+  if (!page) return;
+  page.style.removeProperty("zoom");
+  page.style.removeProperty("width");
+  page.style.removeProperty("max-width");
+}
+
+function printSingleA4() {
+  fitDocumentToSingleA4();
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => window.print());
+  });
+}
 
 const STATUS_LABELS = {
   draft: "แบบร่าง",
@@ -23,6 +69,14 @@ const STATUS_COLORS = {
 };
 
 export default function QuotationDetailPage() {
+  useEffect(() => {
+    window.addEventListener("beforeprint", fitDocumentToSingleA4);
+    window.addEventListener("afterprint", resetDocumentPrintFit);
+    return () => {
+      window.removeEventListener("beforeprint", fitDocumentToSingleA4);
+      window.removeEventListener("afterprint", resetDocumentPrintFit);
+    };
+  }, []);
   const params = useParams();
   const router = useRouter();
   const id = params.id;
@@ -265,114 +319,199 @@ export default function QuotationDetailPage() {
     0
   );
 
-  const hasIncludedTotal =
-    Number(quotation.subtotal || 0) > 0 ||
-    Number(quotation.grand_total || 0) > 0;
-
-  const customerName =
-    customer?.company_name ||
-    customer?.contact_name ||
-    customer?.customer_code ||
-    "-";
-
   return (
     <>
       <style>{`
-        .quote-title{font-size:24px;font-weight:800;text-align:right;text-decoration:underline;margin:0 0 8px}
-        .quote-company-name{font-size:19px;font-weight:800;text-align:center;margin:0 0 14px}
-        .quote-company-meta{font-size:11.5px;line-height:1.5;margin-bottom:10px}
-        .quote-customer-box{display:grid;grid-template-columns:minmax(0,1.65fr) minmax(220px,.9fr);border:1.2px solid #111;margin-bottom:0}
-        .quote-customer-left{padding:8px 10px;border-right:1.2px solid #111;min-width:0}
-        .quote-customer-right{padding:8px 10px;min-width:0}
-        .quote-field-row{display:grid;grid-template-columns:140px minmax(0,1fr);gap:8px;min-height:23px;align-items:center;border-bottom:1px solid #d7dce2}
-        .quote-field-row:last-child{border-bottom:0}
-        .quote-field-label{font-weight:700}
-        .quote-meta-row{display:grid;grid-template-columns:80px minmax(0,1fr);gap:8px;align-items:center;min-height:28px}
-        .quote-meta-row strong{text-align:right;overflow-wrap:anywhere}
-        .quote-items-table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:11px}
-        .quote-items-table th,.quote-items-table td{border:1.1px solid #111;padding:6px 5px;vertical-align:top;overflow-wrap:anywhere}
-        .quote-items-table th{text-align:center;background:#fff;font-weight:800}
-        .quote-items-table th>div{font-size:9px;font-weight:500;margin-top:2px}
-        .quote-project-row td{padding-top:7px;padding-bottom:7px}
-        .quote-project-note{white-space:pre-wrap;margin-top:4px;line-height:1.4}
-        .quote-item-row td{padding-top:9px;padding-bottom:9px}
-        .quote-description{white-space:pre-wrap;font-weight:700;line-height:1.4}
-        .quote-subdetail{font-size:9px;margin-top:3px;color:#374151}
-        .quote-center{text-align:center;vertical-align:middle!important}
-        .quote-money{text-align:right;white-space:nowrap;vertical-align:middle!important}
-        .quote-total{font-weight:800}
-        .quote-empty{text-align:center;padding:18px!important}
-        .quote-bottom{display:grid;grid-template-columns:minmax(0,1fr) 255px;border:1.1px solid #111;border-top:0;min-height:88px}
-        .quote-bottom-left{padding:10px 12px;display:flex;align-items:flex-end;min-width:0}
-        .quote-payment{font-size:9.6px;line-height:1.4}
-        .quote-payment strong{display:block;font-size:10.5px;margin-bottom:3px}
-        .quote-summary{border-left:1.1px solid #111;padding:0;min-width:0}
-        .quote-summary>div:not(.quote-choice-note){display:flex;justify-content:space-between;gap:10px;padding:6px 8px;border-bottom:1px solid #111;font-size:9.6px}
-        .quote-summary>div:last-child{border-bottom:0}
-        .quote-grand{font-size:11.5px!important;font-weight:800}
-        .quote-choice-note{padding:10px;display:flex;flex-direction:column;gap:4px;font-size:9.5px}
-        .quote-signatures{display:grid;grid-template-columns:1fr 1fr;border:1.1px solid #111;border-top:0;min-height:102px;margin-top:auto}
-        .quote-signatures>div{text-align:center;padding:9px 12px;font-size:9.5px}
-        .quote-signatures>div+div{border-left:1.1px solid #111}
-        .quote-sign-space{height:33px}
-
-        @media print{
-          @page{size:A4 portrait;margin:0}
-          html,body{width:210mm!important;height:297mm!important;margin:0!important;padding:0!important;background:#fff!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-          body{overflow:visible!important}
-          .no-print{display:none!important}
-          .page-wrapper{
-            width:210mm!important;
-            height:297mm!important;
-            min-height:297mm!important;
-            max-height:297mm!important;
-            margin:0!important;
-            padding:0!important;
-            background:#fff!important;
-            overflow:visible!important;
-          }
-          .print-page{
-            width:210mm!important;
-            height:297mm!important;
-            min-height:297mm!important;
-            max-height:297mm!important;
-            margin:0!important;
-            padding:11mm 13mm 11mm!important;
-            box-sizing:border-box!important;
-            background:#fff!important;
-            border-radius:0!important;
-            box-shadow:none!important;
-            display:flex!important;
-            flex-direction:column!important;
-            overflow:hidden!important;
+        @media print {
+          @page {
+            size: A4 portrait;
+            margin: 6mm;
           }
 
-          .quote-title{font-size:20px;margin-bottom:5px}
-          .quote-company-name{font-size:16px;margin-bottom:9px}
-          .quote-company-meta{font-size:9.2px;line-height:1.35;margin-bottom:7px}
-          .quote-customer-box{grid-template-columns:minmax(0,1.65fr) minmax(54mm,.9fr)}
-          .quote-customer-left,.quote-customer-right{padding:5px 7px}
-          .quote-field-row{grid-template-columns:31mm minmax(0,1fr);min-height:18px;font-size:8.8px}
-          .quote-meta-row{grid-template-columns:19mm minmax(0,1fr);min-height:20px;font-size:8.8px}
-          .quote-items-table{font-size:8.9px}
-          .quote-items-table th,.quote-items-table td{padding:4px 4px;line-height:1.25}
-          .quote-items-table th>div{font-size:7.8px}
-          .quote-project-row td{padding-top:5px;padding-bottom:5px}
-          .quote-project-note{margin-top:2px;line-height:1.25}
-          .quote-item-row td{padding-top:6px;padding-bottom:6px}
-          .quote-description{line-height:1.25}
-          .quote-subdetail{font-size:7.8px}
-          .quote-bottom{grid-template-columns:minmax(0,1fr) 57mm;min-height:67px}
-          .quote-bottom-left{padding:6px 8px}
-          .quote-payment{font-size:7.8px;line-height:1.25}
-          .quote-payment strong{font-size:8.5px;margin-bottom:2px}
-          .quote-summary>div:not(.quote-choice-note){padding:4px 6px;font-size:7.9px}
-          .quote-grand{font-size:9.3px!important}
-          .quote-choice-note{padding:7px;font-size:7.8px}
-          .quote-signatures{min-height:76px}
-          .quote-signatures>div{padding:6px 9px;font-size:8px}
-          .quote-sign-space{height:21px}
-          tr{break-inside:avoid;page-break-inside:avoid}
+          html,
+          body {
+            margin: 0 !important;
+            padding: 0 !important;
+            background: white !important;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+          }
+
+          .no-print {
+            display: none !important;
+          }
+
+          .page-wrapper {
+            background: white !important;
+            padding: 0 !important;
+            margin: 0 !important;
+          }
+
+          .print-page {
+            width: 198mm !important;
+            min-height: 0 !important;
+            break-after: avoid !important;
+            page-break-after: avoid !important;
+            min-height: 0 !important;
+            max-width: none !important;
+            margin: 0 auto !important;
+            padding: 0 !important;
+            border-radius: 0 !important;
+            box-shadow: none !important;
+          }
+
+          table {
+            page-break-inside: auto;
+          }
+
+          thead {
+            display: table-header-group;
+          }
+
+          tr {
+            page-break-inside: avoid;
+            break-inside: avoid;
+          }
+
+          .avoid-break {
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+          }
+
+          img {
+            max-height: 75px !important;
+            width: auto !important;
+          }
+
+          .print-page header {
+            gap: 12px !important;
+            margin-bottom: 8px !important;
+          }
+
+          .print-page table {
+            font-size: 10px !important;
+          }
+
+          .print-page th,
+          .print-page td {
+            padding: 5px 6px !important;
+            line-height: 1.25 !important;
+          }
+
+          .print-page h1 {
+            font-size: 22px !important;
+            margin: 0 !important;
+          }
+
+          .print-page h2 {
+            font-size: 13px !important;
+            margin-top: 8px !important;
+            margin-bottom: 8px !important;
+          }
+
+          .print-page p,
+          .print-page div,
+          .print-page span,
+          .print-page dt,
+          .print-page dd {
+            line-height: 1.35 !important;
+          }
+
+          .print-page .avoid-break {
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
+          }
+
+
+          /* Compact quotation layout so the complete document, including signatures,
+             fits on a single A4 page whenever content is reasonably sized. */
+          .print-header {
+            grid-template-columns: minmax(0, 1fr) 205px !important;
+            gap: 10px !important;
+            margin-bottom: 4px !important;
+          }
+
+          .print-header img {
+            width: 72px !important;
+            max-height: 58px !important;
+          }
+
+          .print-header > div:first-child {
+            gap: 8px !important;
+          }
+
+          .print-header h1 {
+            font-size: 19px !important;
+          }
+
+          .compact-info {
+            gap: 8px !important;
+            margin-bottom: 9px !important;
+          }
+
+          .compact-info-card {
+            padding: 7px 9px !important;
+            border-radius: 5px !important;
+          }
+
+          .compact-info-card h2 {
+            margin: 0 0 5px !important;
+            font-size: 12px !important;
+          }
+
+          .compact-info-card dl > div {
+            grid-template-columns: 92px minmax(0,1fr) !important;
+            gap: 5px !important;
+            margin-bottom: 2px !important;
+          }
+
+          .compact-info-card dt,
+          .compact-info-card dd {
+            font-size: 10px !important;
+          }
+
+          .compact-table {
+            margin-bottom: 8px !important;
+          }
+
+          .compact-table h2 {
+            margin-bottom: 5px !important;
+          }
+
+          .compact-table table {
+            margin-top: 4px !important;
+          }
+
+          .compact-summary {
+            grid-template-columns: minmax(0,1fr) 300px !important;
+            gap: 10px !important;
+          }
+
+          .compact-summary > div {
+            margin-bottom: 0 !important;
+          }
+
+          .print-notice {
+            margin-top: 8px !important;
+            padding: 5px 8px !important;
+            font-size: 9px !important;
+          }
+
+          .print-signatures {
+            margin-top: 8px !important;
+            gap: 36px !important;
+            break-inside: auto !important;
+            page-break-inside: auto !important;
+          }
+
+          .print-signature-space {
+            height: 8px !important;
+          }
+
+          .print-signatures div {
+            font-size: 9px !important;
+            line-height: 1.2 !important;
+          }
         }
       `}</style>
 
@@ -448,154 +587,470 @@ export default function QuotationDetailPage() {
           style={styles.document}
           className="print-page"
         >
-          {/* PROFESSIONAL A4 QUOTATION */}
-          <div className="quote-title">ใบเสนอราคา</div>
-          <div className="quote-company-name">
-            บริษัท ธานี แอดเวอร์ไทซิ่ง จำกัด (สำนักงานใหญ่)
-          </div>
-          <div className="quote-company-meta">
-            <div>1/5 หมู่ 15 ถนนสันโค้งน้อย ตำบลรอบเวียง อำเภอเมืองเชียงราย จังหวัดเชียงราย 57000</div>
-            <div>โทร 093-1318183</div>
-            <div>เลขประจำตัวผู้เสียภาษีอากร 0575565002465</div>
-          </div>
+          {/* HEADER */}
+          <header style={styles.header} className="print-header">
+            <div style={styles.companyArea}>
+              <img
+                src="/logo.png"
+                alt="THANEE ADVERTISING"
+                style={styles.logo}
+              />
 
-          <section className="quote-customer-box">
-            <div className="quote-customer-left">
-              <div className="quote-field-row">
-                <span className="quote-field-label">ชื่อลูกค้า / Customers:</span>
-                <strong>{customerName}</strong>
-              </div>
-              <div className="quote-field-row">
-                <span className="quote-field-label">ผู้ติดต่อ / Contact:</span>
-                <span>{customer?.contact_name || "-"}</span>
-              </div>
-              {customer?.phone && (
-                <div className="quote-field-row">
-                  <span className="quote-field-label">โทรศัพท์ / Tel:</span>
-                  <span>{customer.phone}</span>
+              <div style={styles.companyDetails}>
+                <div style={styles.companyName}>
+                  ร้าน ธานี แอ็ดเวอร์ไทซิ่ง
                 </div>
-              )}
-              {customer?.email && (
-                <div className="quote-field-row">
-                  <span className="quote-field-label">อีเมล / Email:</span>
-                  <span>{customer.email}</span>
+
+                <div style={styles.companyEnglish}>
+                  THANEE ADVERTISING
                 </div>
-              )}
+
+                <div style={styles.companyContact}>
+                  14/15 ม.8 ต.บางกระสั้น อ.บางปะอิน จ.พระนครศรีอยุธยา 13160
+                </div>
+
+                <div style={styles.companyContact}>
+                  เลขประจำตัวผู้เสียภาษี: 3149900246546
+                </div>
+
+                <div style={styles.companyContact}>
+                  โทร: 089-779-7319
+                </div>
+
+                <div style={styles.companyContact}>
+                  อีเมล: siwanon_s@hotmail.com
+                </div>
+
+                <div style={styles.companyContact}>
+                  LINE: 0931318183
+                </div>
+              </div>
             </div>
 
-            <div className="quote-customer-right">
-              <div className="quote-meta-row">
-                <span>เลขที่ / No.</span>
-                <strong>{quotation.quotation_no || "-"}</strong>
+            <div style={styles.docTitleBlock}>
+              <h1 style={styles.docTitle}>
+                ใบเสนอราคา
+              </h1>
+
+              <div style={styles.quotationEnglish}>
+                QUOTATION
               </div>
-              <div className="quote-meta-row">
-                <span>วันที่ / Date</span>
-                <strong>{formatDate(quotation.quotation_date)}</strong>
+
+              <div style={styles.docMeta}>
+                <div>
+                  เลขที่:{" "}
+                  <strong>
+                    {quotation.quotation_no || "-"}
+                  </strong>
+                </div>
+
+                <div>
+                  วันที่:{" "}
+                  {formatDate(
+                    quotation.quotation_date
+                  )}
+                </div>
+
+                <div>
+                  ยืนราคา:{" "}
+                  {quotation.valid_days ?? "-"} วัน
+                </div>
+
+                <div>
+                  ใช้ได้ถึง:{" "}
+                  {getValidUntilDate(
+                    quotation.quotation_date,
+                    quotation.valid_days
+                  )}
+                </div>
               </div>
-              <div className="quote-meta-row">
-                <span>ยืนราคา / Valid</span>
-                <strong>{quotation.valid_days ?? "-"} วัน</strong>
-              </div>
+            </div>
+          </header>
+
+          <div style={styles.divider} />
+
+          {/* CUSTOMER / PROJECT */}
+          <section style={styles.infoGrid} className="compact-info">
+            <div style={styles.infoCard} className="compact-info-card">
+              <h2 style={styles.sectionTitle}>
+                ข้อมูลลูกค้า
+              </h2>
+
+              <dl style={styles.definitionList}>
+                <InfoRow
+                  label="รหัสลูกค้า"
+                  value={customer?.customer_code}
+                />
+
+                <InfoRow
+                  label="บริษัท / ลูกค้า"
+                  value={
+                    customer?.company_name ||
+                    customer?.contact_name
+                  }
+                />
+
+                <InfoRow
+                  label="ผู้ติดต่อ"
+                  value={customer?.contact_name}
+                />
+
+                <InfoRow
+                  label="โทรศัพท์"
+                  value={customer?.phone}
+                />
+
+                <InfoRow
+                  label="อีเมล"
+                  value={customer?.email}
+                />
+              </dl>
+            </div>
+
+            <div style={styles.infoCard}>
+              <h2 style={styles.sectionTitle}>
+                รายละเอียดโครงการ
+              </h2>
+
+              <dl style={styles.definitionList}>
+                <InfoRow
+                  label="ชื่อโครงการ / งาน"
+                  value={quotation.project_name}
+                />
+
+                <div style={styles.definitionRow}>
+                  <dt style={styles.definitionTerm}>
+                    สถานะ
+                  </dt>
+
+                  <dd style={styles.definitionDesc}>
+                    <span
+                      style={{
+                        ...styles.statusBadge,
+                        background: statusStyle.bg,
+                        color: statusStyle.color,
+                      }}
+                    >
+                      {getStatusLabel(
+                        quotation.status
+                      )}
+                    </span>
+                  </dd>
+                </div>
+              </dl>
             </div>
           </section>
 
-          <table className="quote-items-table">
-            <colgroup>
-              <col style={{width:"6%"}} />
-              <col style={{width:"47%"}} />
-              <col style={{width:"10%"}} />
-              <col style={{width:"13%"}} />
-              <col style={{width:"11%"}} />
-              <col style={{width:"13%"}} />
-            </colgroup>
-            <thead>
-              <tr>
-                <th>ลำดับที่<div>Item</div></th>
-                <th>รายการ<div>Description</div></th>
-                <th>จำนวน<div>Quantity</div></th>
-                <th>ราคา/หน่วย<div>Unit Price</div></th>
-                <th>VAT</th>
-                <th>จำนวนเงิน<div>Amount</div></th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr className="quote-project-row">
-                <td></td>
-                <td colSpan={5}>
-                  <strong>{quotation.project_name || "รายละเอียดงาน"}</strong>
-                  {quotation.note?.trim() && (
-                    <div className="quote-project-note">{quotation.note}</div>
-                  )}
-                </td>
-              </tr>
+          {/* ITEMS */}
+          <section style={styles.tableSection} className="compact-table">
+            <h2 style={styles.sectionTitle}>
+              รายการสินค้า / บริการ
+            </h2>
 
-              {items.length === 0 ? (
+
+            <table style={styles.table}>
+              <thead>
                 <tr>
-                  <td colSpan={6} className="quote-empty">ไม่มีรายการงาน</td>
-                </tr>
-              ) : items.map((item,index)=>{
-                const base=displayItemAmount(item);
-                const vat=base*(Number(quotation.vat_percent||0)/100);
-                const total=base+vat;
-                return (
-                  <tr key={item.id || index} className="quote-item-row">
-                    <td className="quote-center">{index+1}</td>
-                    <td>
-                      <div className="quote-description">{item.description || "-"}</div>
-                      {item.size && <div className="quote-subdetail">ขนาด: {formatItemSize(item)}</div>}
-                    </td>
-                    <td className="quote-center">{item.quantity ?? "-"}</td>
-                    <td className="quote-money">฿{formatMoney(item.unit_price)}</td>
-                    <td className="quote-money">฿{formatMoney(vat)}</td>
-                    <td className="quote-money quote-total">฿{formatMoney(total)}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                  <th
+                    style={{
+                      ...styles.th,
+                      width: "44px",
+                    }}
+                  >
+                    ลำดับ
+                  </th>
 
-          <section className="quote-bottom">
-            <div className="quote-bottom-left">
-              <div className="quote-payment">
-                <strong>ข้อมูลการชำระเงิน</strong>
-                <div>ธนาคาร: กรุงไทย</div>
-                <div>ชื่อบัญชี: ธานีแอดเวอร์ไทซิ่ง โดยนายศิวนนท์ ศุภฐิติพงศ์</div>
-                <div>เลขบัญชี: 983-4-51403-4</div>
+                  <th
+                    style={{
+                      ...styles.th,
+                      textAlign: "left",
+                    }}
+                  >
+                    รายละเอียด
+                  </th>
+
+                  <th
+                    style={{
+                      ...styles.th,
+                      width: "120px",
+                    }}
+                  >
+                    ขนาด
+                  </th>
+
+                  <th
+                    style={{
+                      ...styles.th,
+                      width: "70px",
+                    }}
+                  >
+                    จำนวน
+                  </th>
+
+                  <th
+                    style={{
+                      ...styles.th,
+                      width: "70px",
+                    }}
+                  >
+                    หน่วย
+                  </th>
+
+                  <th
+                    style={{
+                      ...styles.th,
+                      width: "120px",
+                      textAlign: "right",
+                    }}
+                  >
+                    ราคาต่อหน่วย
+                  </th>
+
+                  <th
+                    style={{
+                      ...styles.th,
+                      width: "120px",
+                      textAlign: "right",
+                    }}
+                  >
+                    จำนวนเงิน
+                  </th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {items.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={7}
+                      style={styles.emptyCell}
+                    >
+                      ไม่มีรายการงาน
+                    </td>
+                  </tr>
+                ) : (
+                  items.map((item, index) => (
+                    <tr key={item.id}>
+                      <td
+                        style={{
+                          ...styles.td,
+                          textAlign: "center",
+                        }}
+                      >
+                        {index + 1}
+                      </td>
+
+                      <td style={styles.td}>
+                        <div style={{whiteSpace:"pre-wrap"}}>{item.description || "-"}</div>
+                      </td>
+
+                      <td
+                        style={{
+                          ...styles.td,
+                          textAlign: "center",
+                        }}
+                      >
+                        {formatItemSize(item)}
+                      </td>
+
+                      <td
+                        style={{
+                          ...styles.td,
+                          textAlign: "center",
+                        }}
+                      >
+                        {item.quantity ?? "-"}
+                      </td>
+
+                      <td
+                        style={{
+                          ...styles.td,
+                          textAlign: "center",
+                        }}
+                      >
+                        {item.unit || "-"}
+                      </td>
+
+                      <td
+                        style={{
+                          ...styles.td,
+                          textAlign: "right",
+                        }}
+                      >
+                        ฿
+                        {formatMoney(
+                          item.unit_price
+                        )}
+                      </td>
+
+                      <td
+                        style={{
+                          ...styles.td,
+                          textAlign: "right",
+                          fontWeight: 700,
+                        }}
+                      >
+                        {item.included_in_total === false ? <>
+                          <div>฿{formatMoney(displayItemAmount(item))}</div>
+                          <div style={{fontSize:11,color:"#374151",marginTop:3}}>VAT {Number(quotation.vat_percent||0)}%: ฿{formatMoney(optionVat(item))}</div>
+                          <div style={{fontSize:12,color:"#111827",fontWeight:800}}>รวม VAT: ฿{formatMoney(optionTotal(item))}</div>
+                        </> : <>฿{formatMoney(displayItemAmount(item))}</>}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </section>
+
+          {/* SUMMARY */}
+          <section
+            style={styles.summaryGrid}
+            className="avoid-break"
+          >
+            <div>
+              <div style={styles.noteBlock}>
+                <h2 style={styles.sectionTitle}>
+                  หมายเหตุ / เงื่อนไข
+                </h2>
+
+                <div style={styles.noteContent}>
+                  {quotation.note?.trim()
+                    ? quotation.note
+                    : "-"}
+                </div>
+              </div>
+
+              <div style={styles.paymentBox}>
+                <h2 style={styles.paymentTitle}>
+                  ข้อมูลการชำระเงิน
+                </h2>
+
+                <div style={styles.paymentRow}>
+                  <strong>ธนาคาร:</strong>{" "}
+                  กรุงไทย
+                </div>
+
+                <div style={styles.paymentRow}>
+                  <strong>ชื่อบัญชี:</strong>{" "}
+                  ธานีแอดเวอร์ไทซิ่ง
+                  โดยนายศิวนนท์ ศุภฐิติพงศ์
+                </div>
+
+                <div style={styles.paymentRow}>
+                  <strong>เลขบัญชี:</strong>{" "}
+                  983-4-51403-4
+                </div>
               </div>
             </div>
 
-            <div className="quote-summary">
-              {hasIncludedTotal ? (
-                <>
-                  <div><span>มูลค่าสินค้า</span><strong>฿{formatMoney(quotation.subtotal)}</strong></div>
-                  {Number(quotation.discount || 0) > 0 && (
-                    <div><span>ส่วนลด</span><strong>- ฿{formatMoney(quotation.discount)}</strong></div>
+            <div style={styles.totalsBlock}>
+              <div style={styles.totalRow}>
+                <span>รวมเป็นเงิน</span>
+
+                <strong>
+                  ฿
+                  {formatMoney(
+                    quotation.subtotal
                   )}
-                  <div><span>ภาษีมูลค่าเพิ่ม {quotation.vat_percent ?? 0}%</span><strong>฿{formatMoney(quotation.vat_amount)}</strong></div>
-                  <div className="quote-grand"><span>รวมทั้งสิ้น</span><strong>฿{formatMoney(quotation.grand_total)}</strong></div>
-                </>
-              ) : (
-                <div className="quote-choice-note">
-                  <strong>เสนอราคาเปรียบเทียบตามตัวเลือกด้านบน</strong>
-                  <span>ยอดรวม VAT แสดงแยกในแต่ละรายการ</span>
-                </div>
-              )}
+                </strong>
+              </div>
+
+              <div style={styles.totalRow}>
+                <span>ส่วนลด</span>
+
+                <strong>
+                  ฿
+                  {formatMoney(
+                    quotation.discount
+                  )}
+                </strong>
+              </div>
+
+              <div style={styles.totalRow}>
+                <span>
+                  มูลค่าหลังหักส่วนลด
+                </span>
+
+                <strong>
+                  ฿{formatMoney(afterDiscount)}
+                </strong>
+              </div>
+
+              <div style={styles.totalRow}>
+                <span>
+                  ภาษีมูลค่าเพิ่ม VAT (
+                  {quotation.vat_percent ?? 0}
+                  %)
+                </span>
+
+                <strong>
+                  ฿
+                  {formatMoney(
+                    quotation.vat_amount
+                  )}
+                </strong>
+              </div>
+
+              <div style={styles.totalDivider} />
+
+              <div style={styles.grandTotalRow}>
+                <span>ยอดสุทธิ</span>
+
+                <strong
+                  style={styles.grandTotalValue}
+                >
+                  ฿
+                  {formatMoney(
+                    quotation.grand_total
+                  )}
+                </strong>
+              </div>
             </div>
           </section>
 
-          <section className="quote-signatures">
-            <div>
-              <strong>ผู้อนุมัติ</strong>
-              <div className="quote-sign-space"></div>
-              <div>ลงชื่อ __________________________</div>
-              <div>วันที่ ____ / ____ / ______</div>
+          <div
+            style={styles.notice}
+            className="print-notice"
+          >
+            กรุณาตรวจสอบรายละเอียดก่อนยืนยันการสั่งผลิต
+          </div>
+
+          {/* SIGNATURE */}
+          <section
+            style={styles.signatureSection}
+            className="print-signatures"
+          >
+            <div style={styles.signatureBox}>
+              <div style={styles.signatureSpace} className="print-signature-space" />
+
+              <div style={styles.signatureLabel}>
+                ผู้เสนอราคา
+              </div>
+
+              <div style={styles.signatureText}>
+                ลงชื่อ __________________________
+              </div>
+
+              <div style={styles.signatureText}>
+                วันที่ ____ / ____ / ______
+              </div>
             </div>
-            <div>
-              <strong>ผู้เสนอราคา</strong>
-              <div className="quote-sign-space"></div>
-              <div>(นายศิวนนท์ ศุภฐิติพงศ์)</div>
-              <div>ผู้จัดการ</div>
-              <div>วันที่ {formatDate(quotation.quotation_date)}</div>
+
+            <div style={styles.signatureBox}>
+              <div style={styles.signatureSpace} />
+
+              <div style={styles.signatureLabel}>
+                ผู้อนุมัติ / ลูกค้า
+              </div>
+
+              <div style={styles.signatureText}>
+                ลงชื่อ __________________________
+              </div>
+
+              <div style={styles.signatureText}>
+                วันที่ ____ / ____ / ______
+              </div>
             </div>
           </section>
         </article>
@@ -605,7 +1060,7 @@ export default function QuotationDetailPage() {
 }
 
 function InfoRow({ label, value }) {
-  if (value === null || value === undefined || ["", "-"].includes(String(value).trim())) return null;
+  if (value === null || value === undefined || String(value).trim() === "") return null;
   return (
     <div style={styles.definitionRow}>
       <dt style={styles.definitionTerm}>
@@ -718,14 +1173,11 @@ const styles = {
   },
 
   document: {
-    width: "210mm",
-    minHeight: "297mm",
-    maxWidth: "calc(100vw - 40px)",
+    maxWidth: "1050px",
     margin: "0 auto",
     background: "white",
-    padding: "14mm 15mm 16mm",
-    boxSizing: "border-box",
-    borderRadius: "8px",
+    padding: "34px 38px",
+    borderRadius: "12px",
     boxShadow:
       "0 4px 20px rgba(15,23,42,0.08)",
   },
@@ -803,9 +1255,9 @@ const styles = {
   },
 
   divider: {
-    height: "2px",
+    height: "3px",
     background: "#111827",
-    margin: "18px 0",
+    margin: "24px 0",
   },
 
   infoGrid: {
@@ -817,10 +1269,10 @@ const styles = {
   },
 
   infoCard: {
-    background: "#fbfcfe",
-    border: "1px solid #e2e8f0",
-    borderRadius: "10px",
-    padding: "14px 16px",
+    background: "#fafafa",
+    border: "1px solid #e5e7eb",
+    borderRadius: "8px",
+    padding: "16px 18px",
   },
 
   sectionTitle: {
@@ -901,16 +1353,9 @@ const styles = {
   summaryGrid: {
     display: "grid",
     gridTemplateColumns:
-      "minmax(0,1.7fr) minmax(290px,.8fr)",
-    gap: "16px",
-    alignItems: "stretch",
-  },
-
-  summaryLeftGrid: {
-    display: "grid",
-    gridTemplateColumns: "minmax(0,1.35fr) minmax(0,1fr)",
-    gap: "12px",
-    alignItems: "stretch",
+      "minmax(0,1fr) 340px",
+    gap: "22px",
+    alignItems: "start",
   },
 
   noteBlock: {
@@ -922,8 +1367,8 @@ const styles = {
     background: "#fafafa",
     border: "1px solid #e5e7eb",
     borderRadius: "8px",
-    padding: "12px",
-    minHeight: "96px",
+    padding: "14px",
+    minHeight: "80px",
     color: "#374151",
     lineHeight: 1.6,
     fontSize: "13px",
@@ -997,8 +1442,8 @@ const styles = {
   signatureSection: {
     display: "grid",
     gridTemplateColumns: "1fr 1fr",
-    gap: "56px",
-    marginTop: "22px",
+    gap: "70px",
+    marginTop: "38px",
   },
 
   signatureBox: {
