@@ -269,7 +269,7 @@ export default function QuotationDetailPage() {
         @media print {
           @page {
             size: A4 portrait;
-            margin: 5mm;
+            margin: 6mm;
           }
 
           html,
@@ -292,7 +292,8 @@ export default function QuotationDetailPage() {
           }
 
           .print-page {
-            width: 190mm !important;
+            width: 218mm !important;
+            zoom: 0.90;
             min-height: 0 !important;
             max-width: none !important;
             margin: 0 auto !important;
@@ -322,6 +323,45 @@ export default function QuotationDetailPage() {
           img {
             max-height: 75px !important;
             width: auto !important;
+          }
+
+          .print-page header {
+            gap: 12px !important;
+            margin-bottom: 8px !important;
+          }
+
+          .print-page table {
+            font-size: 10px !important;
+          }
+
+          .print-page th,
+          .print-page td {
+            padding: 5px 6px !important;
+            line-height: 1.25 !important;
+          }
+
+          .print-page h1 {
+            font-size: 22px !important;
+            margin: 0 !important;
+          }
+
+          .print-page h2 {
+            font-size: 13px !important;
+            margin-top: 8px !important;
+            margin-bottom: 8px !important;
+          }
+
+          .print-page p,
+          .print-page div,
+          .print-page span,
+          .print-page dt,
+          .print-page dd {
+            line-height: 1.35 !important;
+          }
+
+          .print-page .avoid-break {
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
           }
         }
       `}</style>
