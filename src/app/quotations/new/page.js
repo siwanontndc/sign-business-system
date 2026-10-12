@@ -92,9 +92,18 @@ export default function NewQuotationPage() {
 
     if (product.calculation === "sqm") {
       const size = parseCmSize(item.size);
-      if (!size) return { amount:0, price, text:"กรอกขนาด เช่น 200 x 100 ซม." };
-      const area = (size.width * size.height) / 10000;
-      return { amount:area * qty * price, price, text:`${area.toFixed(2)} ตร.ม. × ${qty} × ฿${money(price)}` };
+      if (size) {
+        const area = (size.width * size.height) / 10000;
+        return { amount:area * qty * price, price, text:`${area.toFixed(2)} ตร.ม. × ${qty} × ฿${money(price)}` };
+      }
+
+      // บางงานยังไม่ทราบกว้าง × สูงจริง แต่ทราบพื้นที่รวมโดยประมาณ
+      // ถ้าไม่กรอกขนาด ให้ใช้ช่อง "จำนวน" เป็นจำนวน ตร.ม. โดยตรง
+      if (qty > 0) {
+        return { amount:qty * price, price, text:`กรอกพื้นที่เอง: ${qty} ตร.ม. × ฿${money(price)}` };
+      }
+
+      return { amount:0, price, text:"กรอกขนาด 200 x 100 ซม. หรือกรอกพื้นที่รวมในช่องจำนวน (ตร.ม.)" };
     }
     if (product.calculation === "height_inch") {
       const h = parseHeightInch(item.size);
@@ -140,7 +149,7 @@ export default function NewQuotationPage() {
 
     for (let i=0;i<valid.length;i++) {
       const p = getProduct(valid[i].product_key);
-      if (p.calculation === "sqm" && !parseCmSize(valid[i].size)) return alert(`รายการที่ ${i+1}: กรุณากรอกขนาด เช่น 200 x 100`);
+      if (p.calculation === "sqm" && !parseCmSize(valid[i].size) && !(Number(valid[i].quantity) > 0)) return alert(`รายการที่ ${i+1}: กรุณากรอกขนาด เช่น 200 x 100 หรือกรอกพื้นที่รวมเป็น ตร.ม. ในช่องจำนวน`);
       if (p.calculation === "height_inch" && !parseHeightInch(valid[i].size)) return alert(`รายการที่ ${i+1}: กรุณากรอกความสูง เช่น 20 นิ้ว`);
     }
 
@@ -193,8 +202,8 @@ export default function NewQuotationPage() {
 
     <section style={{background:"white",borderRadius:12,overflow:"hidden"}}>
       <div style={{padding:16,display:"flex",justifyContent:"space-between",alignItems:"center"}}><strong>รายการสินค้า / บริการ</strong><button style={{...btn,background:"#2563eb",color:"white"}} onClick={()=>setItems(old=>[...old,newItem()])}>+ เพิ่มรายการ</button></div>
-      <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",minWidth:1250}}><thead><tr><th style={th}>#</th><th style={th}>ประเภทงาน</th><th style={th}>รายละเอียด</th><th style={th}>ขนาด/ความสูง</th><th style={th}>จำนวน</th><th style={th}>หน่วย</th><th style={th}>ราคา/หน่วย</th><th style={th}>จำนวนเงิน</th><th style={th}></th></tr></thead><tbody>
-      {items.map((item,index)=>{const p=getProduct(item.product_key);const calc=calculate(item);return <tr key={index}><td style={td}>{index+1}</td><td style={td}><select style={input} value={item.product_key} onChange={e=>changeProduct(index,e.target.value)}>{allProducts().map(x=><option key={x.product_key} value={x.product_key}>{x.name}</option>)}</select></td><td style={td}><input style={input} disabled={item.product_key!=="custom"} value={item.description} onChange={e=>updateItem(index,"description",e.target.value)}/></td><td style={td}><input style={input} value={item.size} onChange={e=>updateItem(index,"size",e.target.value)} placeholder={p.calculation==="sqm"?"200 x 100":p.calculation==="height_inch"?"20":"-"}/><small style={{display:"block",color:"#6b7280",marginTop:4}}>{calc.text}</small></td><td style={td}><input type="number" min="1" style={input} value={item.quantity} onChange={e=>updateItem(index,"quantity",e.target.value)}/></td><td style={td}>{item.unit}</td><td style={td}><input type="number" min="0" step="0.01" style={input} value={item.unit_price} disabled={p.calculation==="sheet_tier"} onChange={e=>updateItem(index,"unit_price",e.target.value)}/>{p.calculation==="sheet_tier" && <small style={{display:"block",color:"#2563eb",marginTop:4}}>อัตโนมัติตามจำนวน</small>}</td><td style={{...td,textAlign:"right",fontWeight:800}}>฿{money(item.amount)}</td><td style={td}><button disabled={items.length===1} style={{...btn,background:"#dc2626",color:"white",opacity:items.length===1?.4:1}} onClick={()=>setItems(old=>old.filter((_,i)=>i!==index))}>ลบ</button></td></tr>})}
+      <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",minWidth:1250}}><thead><tr><th style={th}>#</th><th style={th}>ประเภทงาน</th><th style={th}>รายละเอียด</th><th style={th}>ขนาด/ความสูง (ถ้าทราบ)</th><th style={th}>จำนวน / พื้นที่รวม</th><th style={th}>หน่วย</th><th style={th}>ราคา/หน่วย</th><th style={th}>จำนวนเงิน</th><th style={th}></th></tr></thead><tbody>
+      {items.map((item,index)=>{const p=getProduct(item.product_key);const calc=calculate(item);return <tr key={index}><td style={td}>{index+1}</td><td style={td}><select style={input} value={item.product_key} onChange={e=>changeProduct(index,e.target.value)}>{allProducts().map(x=><option key={x.product_key} value={x.product_key}>{x.name}</option>)}</select></td><td style={td}><input style={input} disabled={item.product_key!=="custom"} value={item.description} onChange={e=>updateItem(index,"description",e.target.value)}/></td><td style={td}><input style={input} value={item.size} onChange={e=>updateItem(index,"size",e.target.value)} placeholder={p.calculation==="sqm"?"200 x 100 หรือเว้นว่าง":p.calculation==="height_inch"?"20":"-"}/><small style={{display:"block",color:"#6b7280",marginTop:4}}>{calc.text}</small></td><td style={td}><input type="number" min="0" step={p.calculation==="sqm"?"0.01":"1"} style={input} value={item.quantity} onChange={e=>updateItem(index,"quantity",e.target.value)}/>{p.calculation==="sqm"&&!parseCmSize(item.size)&&<small style={{display:"block",color:"#2563eb",marginTop:4}}>ไม่ทราบขนาด: ใส่พื้นที่รวมเป็น ตร.ม. ได้เลย</small>}</td><td style={td}>{item.unit}</td><td style={td}><input type="number" min="0" step="0.01" style={input} value={item.unit_price} disabled={p.calculation==="sheet_tier"} onChange={e=>updateItem(index,"unit_price",e.target.value)}/>{p.calculation==="sheet_tier" && <small style={{display:"block",color:"#2563eb",marginTop:4}}>อัตโนมัติตามจำนวน</small>}</td><td style={{...td,textAlign:"right",fontWeight:800}}>฿{money(item.amount)}</td><td style={td}><button disabled={items.length===1} style={{...btn,background:"#dc2626",color:"white",opacity:items.length===1?.4:1}} onClick={()=>setItems(old=>old.filter((_,i)=>i!==index))}>ลบ</button></td></tr>})}
       </tbody></table></div>
     </section>
 
