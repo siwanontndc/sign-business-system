@@ -421,6 +421,97 @@ export default function QuotationDetailPage() {
             break-inside: avoid !important;
             page-break-inside: avoid !important;
           }
+
+
+          /* Compact quotation layout so the complete document, including signatures,
+             fits on a single A4 page whenever content is reasonably sized. */
+          .print-header {
+            grid-template-columns: minmax(0, 1fr) 205px !important;
+            gap: 10px !important;
+            margin-bottom: 4px !important;
+          }
+
+          .print-header img {
+            width: 72px !important;
+            max-height: 58px !important;
+          }
+
+          .print-header > div:first-child {
+            gap: 8px !important;
+          }
+
+          .print-header h1 {
+            font-size: 19px !important;
+          }
+
+          .compact-info {
+            gap: 8px !important;
+            margin-bottom: 9px !important;
+          }
+
+          .compact-info-card {
+            padding: 7px 9px !important;
+            border-radius: 5px !important;
+          }
+
+          .compact-info-card h2 {
+            margin: 0 0 5px !important;
+            font-size: 12px !important;
+          }
+
+          .compact-info-card dl > div {
+            grid-template-columns: 92px minmax(0,1fr) !important;
+            gap: 5px !important;
+            margin-bottom: 2px !important;
+          }
+
+          .compact-info-card dt,
+          .compact-info-card dd {
+            font-size: 10px !important;
+          }
+
+          .compact-table {
+            margin-bottom: 8px !important;
+          }
+
+          .compact-table h2 {
+            margin-bottom: 5px !important;
+          }
+
+          .compact-table table {
+            margin-top: 4px !important;
+          }
+
+          .compact-summary {
+            grid-template-columns: minmax(0,1fr) 300px !important;
+            gap: 10px !important;
+          }
+
+          .compact-summary > div {
+            margin-bottom: 0 !important;
+          }
+
+          .print-notice {
+            margin-top: 8px !important;
+            padding: 5px 8px !important;
+            font-size: 9px !important;
+          }
+
+          .print-signatures {
+            margin-top: 8px !important;
+            gap: 36px !important;
+            break-inside: auto !important;
+            page-break-inside: auto !important;
+          }
+
+          .print-signature-space {
+            height: 8px !important;
+          }
+
+          .print-signatures div {
+            font-size: 9px !important;
+            line-height: 1.2 !important;
+          }
         }
       `}</style>
 
@@ -497,7 +588,7 @@ export default function QuotationDetailPage() {
           className="print-page"
         >
           {/* HEADER */}
-          <header style={styles.header}>
+          <header style={styles.header} className="print-header">
             <div style={styles.companyArea}>
               <img
                 src="/logo.png"
@@ -579,8 +670,8 @@ export default function QuotationDetailPage() {
           <div style={styles.divider} />
 
           {/* CUSTOMER / PROJECT */}
-          <section style={styles.infoGrid}>
-            <div style={styles.infoCard}>
+          <section style={styles.infoGrid} className="compact-info">
+            <div style={styles.infoCard} className="compact-info-card">
               <h2 style={styles.sectionTitle}>
                 ข้อมูลลูกค้า
               </h2>
@@ -651,7 +742,7 @@ export default function QuotationDetailPage() {
           </section>
 
           {/* ITEMS */}
-          <section style={styles.tableSection}>
+          <section style={styles.tableSection} className="compact-table">
             <h2 style={styles.sectionTitle}>
               รายการสินค้า / บริการ
             </h2>
@@ -920,7 +1011,7 @@ export default function QuotationDetailPage() {
 
           <div
             style={styles.notice}
-            className="avoid-break"
+            className="print-notice"
           >
             กรุณาตรวจสอบรายละเอียดก่อนยืนยันการสั่งผลิต
           </div>
@@ -928,10 +1019,10 @@ export default function QuotationDetailPage() {
           {/* SIGNATURE */}
           <section
             style={styles.signatureSection}
-            className="avoid-break"
+            className="print-signatures"
           >
             <div style={styles.signatureBox}>
-              <div style={styles.signatureSpace} />
+              <div style={styles.signatureSpace} className="print-signature-space" />
 
               <div style={styles.signatureLabel}>
                 ผู้เสนอราคา
@@ -969,6 +1060,7 @@ export default function QuotationDetailPage() {
 }
 
 function InfoRow({ label, value }) {
+  if (value === null || value === undefined || String(value).trim() === "") return null;
   return (
     <div style={styles.definitionRow}>
       <dt style={styles.definitionTerm}>
