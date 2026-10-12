@@ -14,8 +14,64 @@ import {
   supabase,
 } from "../../lib/supabase";
 
+function fitDocumentToSingleA4() {
+  const page = document.querySelector(".print-page");
+  if (!page) return;
+
+  // Printable A4 area with 6 mm margins: 198 × 285 mm.
+  const PX_PER_MM = 96 / 25.4;
+  const targetWidthPx = 198 * PX_PER_MM;
+  const targetHeightPx = 285 * PX_PER_MM;
+
+  // Reset first so repeated prints always recalculate from the document itself.
+  page.style.removeProperty("zoom");
+  page.style.removeProperty("width");
+  page.style.removeProperty("max-width");
+  page.style.setProperty("width", "198mm", "important");
+  page.style.setProperty("max-width", "none", "important");
+
+  const rect = page.getBoundingClientRect();
+  const contentWidth = Math.max(rect.width, page.scrollWidth || 0);
+  const contentHeight = Math.max(rect.height, page.scrollHeight || 0);
+
+  let scale = Math.min(
+    1,
+    targetWidthPx / Math.max(contentWidth, 1),
+    targetHeightPx / Math.max(contentHeight, 1)
+  );
+
+  // Keep the full document on one A4 page. Wider virtual page + zoom
+  // preserves readable proportions while preventing page 2/3.
+  scale = Math.max(0.35, scale);
+  page.style.setProperty("width", `${198 / scale}mm`, "important");
+  page.style.setProperty("zoom", String(scale), "important");
+}
+
+function resetDocumentPrintFit() {
+  const page = document.querySelector(".print-page");
+  if (!page) return;
+  page.style.removeProperty("zoom");
+  page.style.removeProperty("width");
+  page.style.removeProperty("max-width");
+}
+
+function printSingleA4() {
+  fitDocumentToSingleA4();
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => window.print());
+  });
+}
+
 
 export default function ReceiptDetailPage() {
+  useEffect(() => {
+    window.addEventListener("beforeprint", fitDocumentToSingleA4);
+    window.addEventListener("afterprint", resetDocumentPrintFit);
+    return () => {
+      window.removeEventListener("beforeprint", fitDocumentToSingleA4);
+      window.removeEventListener("afterprint", resetDocumentPrintFit);
+    };
+  }, []);
   const params =
     useParams();
 
@@ -701,8 +757,10 @@ export default function ReceiptDetailPage() {
             }
 
             .print-page {
-            width: 218mm !important;
-            zoom: 0.90;
+            width: 198mm !important;
+            min-height: 0 !important;
+            break-after: avoid !important;
+            page-break-after: avoid !important;
               max-width: none !important;
               margin: 0 auto !important;
               padding: 0 !important;
