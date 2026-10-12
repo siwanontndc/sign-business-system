@@ -7,7 +7,7 @@ const FINANCE_GROUP="C38847122b9046058c55f79261b6695fc";
 const INCOME=["รายได้งานป้าย","เงินมัดจำ","โอนจากลูกค้า","เงินสดรับ","อื่น ๆ"];
 const EXPENSE=["ค่าวัสดุ","ค่าแรง","ค่าน้ำมัน/เดินทาง","ค่าเครื่องมือ","ค่าใช้จ่ายสำนักงาน","ภาษี/ค่าธรรมเนียม","ค่าเช่า","ค่าโฆษณา/การตลาด","ค่าสาธารณูปโภค","ค่าโทรศัพท์/อินเทอร์เน็ต","ค่างวด/ยานพาหนะ","อื่น ๆ"];
 const input={padding:"11px 12px",border:"1px solid #d1d5db",borderRadius:10,width:"100%",minWidth:0,boxSizing:"border-box",background:"#fff",fontSize:16,lineHeight:1.4};
-const btn={padding:"12px 10px",borderRadius:10,fontWeight:800,fontSize:16,minHeight:48,whiteSpace:"normal",overflowWrap:"anywhere",wordBreak:"break-word",lineHeight:1.25,textAlign:"center"};\nconst autoAnalyzeInFlight=new Set();
+const btn={padding:"12px 10px",borderRadius:10,fontWeight:800,fontSize:16,minHeight:48,whiteSpace:"normal",overflowWrap:"anywhere",wordBreak:"break-word",lineHeight:1.25,textAlign:"center"};
 
 function date(v){
   if(!v)return"";
