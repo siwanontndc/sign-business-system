@@ -4,65 +4,10 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabase";
 
-function fitDocumentToSingleA4() {
-  const page = document.querySelector(".print-page");
-  const wrapper = page?.closest(".page-wrapper");
-  if (!page || !wrapper) return;
-
-  const PX_PER_MM = 96 / 25.4;
-  const targetWidthPx = 190 * PX_PER_MM;
-  const targetHeightPx = 277 * PX_PER_MM;
-
-  page.style.removeProperty("zoom");
-  page.style.removeProperty("transform");
-  page.style.removeProperty("transform-origin");
-  page.style.setProperty("width", "190mm", "important");
-  page.style.setProperty("max-width", "none", "important");
-
-  wrapper.style.setProperty("width", "190mm", "important");
-  wrapper.style.setProperty("height", "277mm", "important");
-  wrapper.style.setProperty("min-height", "277mm", "important");
-  wrapper.style.setProperty("max-height", "277mm", "important");
-  wrapper.style.setProperty("overflow", "hidden", "important");
-
-  const contentWidth = Math.max(page.scrollWidth || 0, page.getBoundingClientRect().width || 0);
-  const contentHeight = Math.max(page.scrollHeight || 0, page.getBoundingClientRect().height || 0);
-
-  let scale = Math.min(
-    1,
-    targetWidthPx / Math.max(contentWidth, 1),
-    targetHeightPx / Math.max(contentHeight, 1)
-  );
-
-  scale = Math.max(0.55, scale * 0.99);
-  page.style.setProperty("transform-origin", "top left", "important");
-  page.style.setProperty("transform", `scale(${scale})`, "important");
-}
-
-function resetDocumentPrintFit() {
-  const page = document.querySelector(".print-page");
-  const wrapper = page?.closest(".page-wrapper");
-  if (page) {
-    page.style.removeProperty("zoom");
-    page.style.removeProperty("transform");
-    page.style.removeProperty("transform-origin");
-    page.style.removeProperty("width");
-    page.style.removeProperty("max-width");
-  }
-  if (wrapper) {
-    wrapper.style.removeProperty("width");
-    wrapper.style.removeProperty("height");
-    wrapper.style.removeProperty("min-height");
-    wrapper.style.removeProperty("max-height");
-    wrapper.style.removeProperty("overflow");
-  }
-}
-
+function fitDocumentToSingleA4() {}
+function resetDocumentPrintFit() {}
 function printSingleA4() {
-  fitDocumentToSingleA4();
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => window.print());
-  });
+  window.print();
 }
 
 const STATUS_LABELS = {
@@ -82,14 +27,6 @@ const STATUS_COLORS = {
 };
 
 export default function QuotationDetailPage() {
-  useEffect(() => {
-    window.addEventListener("beforeprint", fitDocumentToSingleA4);
-    window.addEventListener("afterprint", resetDocumentPrintFit);
-    return () => {
-      window.removeEventListener("beforeprint", fitDocumentToSingleA4);
-      window.removeEventListener("afterprint", resetDocumentPrintFit);
-    };
-  }, []);
   const params = useParams();
   const router = useRouter();
   const id = params.id;
@@ -387,31 +324,31 @@ export default function QuotationDetailPage() {
           html,body{margin:0!important;padding:0!important;background:#fff!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
           .no-print{display:none!important}
           .page-wrapper{width:190mm!important;height:277mm!important;min-height:277mm!important;max-height:277mm!important;margin:0 auto!important;padding:0!important;background:#fff!important;overflow:hidden!important}
-          .print-page{width:190mm!important;max-width:none!important;margin:0 auto!important;padding:6mm 7mm!important;box-sizing:border-box!important;background:#fff!important;border-radius:0!important;box-shadow:none!important}
-          .quote-title{font-size:20px;margin-bottom:5px}
-          .quote-company-name{font-size:17px;margin-bottom:10px}
-          .quote-company-meta{font-size:9.5px;line-height:1.4;margin-bottom:7px}
+          .print-page{width:190mm!important;height:277mm!important;max-width:none!important;margin:0 auto!important;padding:7mm 8mm 8mm!important;box-sizing:border-box!important;background:#fff!important;border-radius:0!important;box-shadow:none!important;display:flex!important;flex-direction:column!important}
+          .quote-title{font-size:22px;margin-bottom:6px}
+          .quote-company-name{font-size:18px;margin-bottom:12px}
+          .quote-company-meta{font-size:10.2px;line-height:1.45;margin-bottom:9px}
           .quote-customer-left,.quote-customer-right{padding:6px 8px}
-          .quote-field-row{grid-template-columns:112px 1fr;min-height:19px;font-size:9.5px}
-          .quote-meta-row{grid-template-columns:70px 1fr;min-height:24px;font-size:9.5px}
-          .quote-items-table{font-size:9.2px}
-          .quote-items-table th,.quote-items-table td{padding:4px 4px;line-height:1.25}
+          .quote-field-row{grid-template-columns:118px 1fr;min-height:21px;font-size:10px}
+          .quote-meta-row{grid-template-columns:72px 1fr;min-height:25px;font-size:10px}
+          .quote-items-table{font-size:10px}
+          .quote-items-table th,.quote-items-table td{padding:5px 5px;line-height:1.32}
           .quote-items-table th>div{font-size:8px}
-          .quote-project-row td{padding-top:5px;padding-bottom:5px}
+          .quote-project-row td{padding-top:7px;padding-bottom:7px}
           .quote-project-note{margin-top:3px;line-height:1.3}
-          .quote-item-row td{padding-top:6px;padding-bottom:6px}
+          .quote-item-row td{padding-top:9px;padding-bottom:9px}
           .quote-description{line-height:1.3}
           .quote-subdetail{font-size:8.2px}
-          .quote-bottom{grid-template-columns:1fr 235px;min-height:72px}
+          .quote-bottom{grid-template-columns:1fr 245px;min-height:86px}
           .quote-bottom-left{padding:8px 10px}
-          .quote-payment{font-size:8.5px;line-height:1.3}
-          .quote-payment strong{font-size:9.2px;margin-bottom:2px}
-          .quote-summary>div:not(.quote-choice-note){padding:5px 7px;font-size:8.8px}
-          .quote-grand{font-size:10px!important}
+          .quote-payment{font-size:9.2px;line-height:1.4}
+          .quote-payment strong{font-size:10px;margin-bottom:3px}
+          .quote-summary>div:not(.quote-choice-note){padding:6px 8px;font-size:9.5px}
+          .quote-grand{font-size:11px!important}
           .quote-choice-note{padding:9px;font-size:8.8px}
-          .quote-signatures{min-height:84px}
-          .quote-signatures>div{padding:7px 10px;font-size:8.8px}
-          .quote-sign-space{height:24px}
+          .quote-signatures{min-height:96px;margin-top:auto!important}
+          .quote-signatures>div{padding:8px 12px;font-size:9.5px}
+          .quote-sign-space{height:30px}
           tr{break-inside:avoid;page-break-inside:avoid}
         }
       `}</style>
@@ -759,12 +696,13 @@ const styles = {
 
   document: {
     width: "210mm",
+    minHeight: "297mm",
     maxWidth: "calc(100vw - 40px)",
     margin: "0 auto",
     background: "white",
-    padding: "16mm 14mm",
+    padding: "14mm 15mm 16mm",
     boxSizing: "border-box",
-    borderRadius: "10px",
+    borderRadius: "8px",
     boxShadow:
       "0 4px 20px rgba(15,23,42,0.08)",
   },
