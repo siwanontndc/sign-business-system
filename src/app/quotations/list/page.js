@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { supabase } from "../../lib/supabase";
 
 const buttonStyle = {
@@ -156,7 +157,27 @@ export default function QuotationListPage() {
   }, [filteredQuotations]);
 
   return (
+    <>
+    <style>{`
+      @media (max-width: 700px) {
+        .qt-list-page { padding: 16px !important; }
+        .qt-list-header { flex-wrap: wrap; align-items: flex-start !important; }
+        .qt-summary { grid-template-columns: 1fr !important; }
+        .qt-table { min-width: 0 !important; }
+        .qt-table thead { display: none; }
+        .qt-table tbody { display: block; padding: 10px; }
+        .qt-table tbody tr { display: block; border: 1px solid #e5e7eb; border-radius: 12px; padding: 10px; margin-bottom: 12px; }
+        .qt-table tbody td { display: flex; justify-content: space-between; align-items: center; text-align: right !important; padding: 8px !important; white-space: normal !important; gap: 12px; }
+        .qt-table tbody td::before { content: attr(data-label); text-align: left; flex-shrink: 0; color: #6b7280; font-weight: 500; }
+        .qt-table tbody td.qt-number { display: block; text-align: left !important; font-size: 17px; }
+        .qt-table tbody td.qt-number::before { display: none; }
+        .qt-table tbody td.qt-actions { justify-content: flex-start; flex-wrap: wrap; }
+        .qt-table tbody td.qt-actions::before { display: none; }
+        .qt-table tbody td.qt-actions button, .qt-table tbody td.qt-actions a { min-height: 42px; }
+      }
+    `}</style>
     <main
+      className="qt-list-page"
       style={{
         minHeight: "100vh",
         background: "#f3f4f6",
@@ -172,6 +193,7 @@ export default function QuotationListPage() {
       >
         {/* HEADER */}
         <div
+          className="qt-list-header"
           style={{
             display: "flex",
             justifyContent: "space-between",
@@ -234,6 +256,7 @@ export default function QuotationListPage() {
 
         {/* SUMMARY */}
         <div
+          className="qt-summary"
           style={{
             display: "grid",
             gridTemplateColumns:
@@ -353,10 +376,11 @@ export default function QuotationListPage() {
         >
           <div style={{ overflowX: "auto" }}>
             <table
+              className="qt-table"
               style={{
                 width: "100%",
                 borderCollapse: "collapse",
-                minWidth: "1100px",
+                minWidth: "0",
               }}
             >
               <thead
@@ -465,30 +489,27 @@ export default function QuotationListPage() {
                           "1px solid #e5e7eb",
                       }}
                     >
-                      <td
-                        style={{
-                          padding: "14px",
-                          fontWeight: "600",
-                        }}
-                      >
-                        {item.quotation_no}
+                      <td className="qt-number" data-label="เลขที่" style={{ padding: "14px", fontWeight: "600" }}>
+                        <Link href={`/quotations/${item.id}`} style={{ color: "#2563eb", textDecoration: "underline", textUnderlineOffset: "3px", overflowWrap: "anywhere" }} aria-label={`เปิดใบเสนอราคา ${item.quotation_no}`}>
+                          {item.quotation_no}
+                        </Link>
                       </td>
 
-                      <td style={{ padding: "14px" }}>
+                      <td data-label="วันที่" style={{ padding: "14px" }}>
                         {formatDate(
                           item.quotation_date
                         )}
                       </td>
 
-                      <td style={{ padding: "14px" }}>
+                      <td data-label="ลูกค้า" style={{ padding: "14px" }}>
                         {getCustomerName(item)}
                       </td>
 
-                      <td style={{ padding: "14px" }}>
+                      <td data-label="โครงการ / งาน" style={{ padding: "14px" }}>
                         {item.project_name}
                       </td>
 
-                      <td
+                      <td data-label="ยอดสุทธิ"
                         style={{
                           padding: "14px",
                           textAlign: "right",
@@ -500,7 +521,7 @@ export default function QuotationListPage() {
                         )}
                       </td>
 
-                      <td
+                      <td data-label="สถานะ"
                         style={{
                           padding: "14px",
                           textAlign: "center",
@@ -521,7 +542,7 @@ export default function QuotationListPage() {
                         </span>
                       </td>
 
-                      <td
+                      <td className="qt-actions"
                         style={{
                           padding: "14px",
                           textAlign: "center",
@@ -529,21 +550,21 @@ export default function QuotationListPage() {
                         }}
                       >
                         {/* ปุ่มเปิดดูใบเสนอราคา */}
-                        <button
-                          onClick={() =>
-                            router.push(
-                              `/quotations/${item.id}`
-                            )
-                          }
+                        <Link
+                          href={`/quotations/${item.id}`}
+                          aria-label={`ดูใบเสนอราคา ${item.quotation_no}`}
                           style={{
                             ...buttonStyle,
                             background: "#2563eb",
                             color: "white",
                             marginRight: "8px",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            textDecoration: "none",
                           }}
                         >
-                          เปิดดู
-                        </button>
+                          👁 ดูใบเสนอราคา
+                        </Link>
 
                         {/* ปุ่มลบ */}
                         <button
@@ -571,5 +592,6 @@ export default function QuotationListPage() {
         </div>
       </div>
     </main>
+    </>
   );
 }
