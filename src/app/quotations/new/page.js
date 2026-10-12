@@ -48,6 +48,9 @@ export default function NewQuotationPage() {
   const [customers, setCustomers] = useState([]);
   const [customerId, setCustomerId] = useState("");
   const [customerSearch, setCustomerSearch] = useState("");
+  const [showNewCustomer, setShowNewCustomer] = useState(false);
+  const [savingCustomer, setSavingCustomer] = useState(false);
+  const [newCustomer, setNewCustomer] = useState({ name:"", contact_name:"", phone:"", email:"" });
   const [projectName, setProjectName] = useState("");
   const [note, setNote] = useState("");
   const [items, setItems] = useState([]);
@@ -132,6 +135,38 @@ export default function NewQuotationPage() {
     setItems(old => old.map((item,i) => i === index ? recalc({ ...item, [field]:value }) : item));
   }
 
+  async function createCustomerInline() {
+    if (savingCustomer) return;
+    const name = newCustomer.name.trim();
+    if (!name) return alert("กรุณากรอกชื่อลูกค้า / บริษัท");
+
+    setSavingCustomer(true);
+    try {
+      const now = new Date();
+      const code = `CUS-${now.getFullYear()}-${String(Date.now()).slice(-6)}`;
+      const contact = newCustomer.contact_name.trim() || name;
+      const { data, error } = await supabase.from("customers").insert({
+        customer_code: code,
+        company_name: name,
+        contact_name: contact,
+        phone: newCustomer.phone.trim() || null,
+        email: newCustomer.email.trim() || null,
+      }).select("id,customer_code,company_name,contact_name,phone,email,created_at").single();
+
+      if (error) throw error;
+
+      setCustomers(old => [data, ...old]);
+      setCustomerId(data.id);
+      setCustomerSearch(`${data.customer_code} - ${data.company_name || data.contact_name}`);
+      setNewCustomer({ name:"", contact_name:"", phone:"", email:"" });
+      setShowNewCustomer(false);
+    } catch (error) {
+      alert("เพิ่มลูกค้าไม่สำเร็จ: " + (error?.message || "เกิดข้อผิดพลาด"));
+    } finally {
+      setSavingCustomer(false);
+    }
+  }
+
   const filteredCustomers = useMemo(() => {
     const q = customerSearch.trim().toLowerCase();
     if (!q) return customers.slice(0,20);
@@ -194,7 +229,31 @@ export default function NewQuotationPage() {
 
     <section style={{background:"white",borderRadius:12,padding:18,marginBottom:18}}>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:14}}>
-        <label>ลูกค้า *<input style={input} value={customerSearch} onChange={e=>{setCustomerSearch(e.target.value);setCustomerId("");}} placeholder="ค้นหารหัส / ชื่อลูกค้า"/><select style={{...input,marginTop:6}} value={customerId} onChange={e=>{setCustomerId(e.target.value);const c=customers.find(x=>x.id===e.target.value);if(c)setCustomerSearch(`${c.customer_code || ""} - ${c.company_name || c.contact_name || ""}`)}}><option value="">-- เลือกลูกค้า --</option>{filteredCustomers.map(c=><option key={c.id} value={c.id}>{c.customer_code || "-"} - {c.company_name || c.contact_name || "ไม่ระบุชื่อ"}</option>)}</select></label>
+        <div>
+          <label>ลูกค้า *</label>
+          <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) auto",gap:8,alignItems:"start"}}>
+            <input style={input} value={customerSearch} onChange={e=>{setCustomerSearch(e.target.value);setCustomerId("");}} placeholder="ค้นหารหัส / ชื่อลูกค้า"/>
+            <button type="button" style={{...btn,background:"#16a34a",color:"white",whiteSpace:"nowrap"}} onClick={()=>{setShowNewCustomer(v=>!v);setNewCustomer(n=>({...n,name:n.name||customerSearch.trim()}));}}>+ ลูกค้าใหม่</button>
+          </div>
+          <select style={{...input,marginTop:6}} value={customerId} onChange={e=>{setCustomerId(e.target.value);const c=customers.find(x=>x.id===e.target.value);if(c)setCustomerSearch(`${c.customer_code || ""} - ${c.company_name || c.contact_name || ""}`)}}>
+            <option value="">-- เลือกลูกค้า --</option>
+            {filteredCustomers.map(c=><option key={c.id} value={c.id}>{c.customer_code || "-"} - {c.company_name || c.contact_name || "ไม่ระบุชื่อ"}</option>)}
+          </select>
+          {showNewCustomer&&<div style={{marginTop:10,padding:12,border:"1px solid #bbf7d0",borderRadius:10,background:"#f0fdf4"}}>
+            <strong style={{display:"block",marginBottom:8}}>เพิ่มลูกค้าใหม่ตรงนี้ได้เลย</strong>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:8}}>
+              <input style={{...input,gridColumn:"1 / -1"}} value={newCustomer.name} onChange={e=>setNewCustomer(n=>({...n,name:e.target.value}))} placeholder="ชื่อลูกค้า / บริษัท *"/>
+              <input style={input} value={newCustomer.contact_name} onChange={e=>setNewCustomer(n=>({...n,contact_name:e.target.value}))} placeholder="ชื่อผู้ติดต่อ (ไม่กรอกจะใช้ชื่อลูกค้า)"/>
+              <input style={input} value={newCustomer.phone} onChange={e=>setNewCustomer(n=>({...n,phone:e.target.value}))} placeholder="เบอร์โทร"/>
+              <input style={{...input,gridColumn:"1 / -1"}} type="email" value={newCustomer.email} onChange={e=>setNewCustomer(n=>({...n,email:e.target.value}))} placeholder="อีเมล (ถ้ามี)"/>
+            </div>
+            <div style={{display:"flex",gap:8,marginTop:10,flexWrap:"wrap"}}>
+              <button type="button" disabled={savingCustomer} style={{...btn,background:"#16a34a",color:"white",opacity:savingCustomer?.6:1}} onClick={createCustomerInline}>{savingCustomer?"กำลังเพิ่ม...":"บันทึกและเลือกลูกค้านี้"}</button>
+              <button type="button" style={{...btn,background:"white",border:"1px solid #d1d5db"}} onClick={()=>setShowNewCustomer(false)}>ยกเลิก</button>
+            </div>
+            <small style={{display:"block",color:"#166534",marginTop:8}}>ระบบสร้างรหัสลูกค้าให้อัตโนมัติ ไม่ต้องออกจากหน้าใบเสนอราคา</small>
+          </div>}
+        </div>
         <label>ชื่อโครงการ / งาน *<input style={input} value={projectName} onChange={e=>setProjectName(e.target.value)} placeholder="เช่น ป้ายหน้าร้าน"/></label>
         <label style={{gridColumn:"1 / -1"}}>หมายเหตุ<textarea rows={3} style={{...input,resize:"vertical"}} value={note} onChange={e=>setNote(e.target.value)}/></label>
       </div>
