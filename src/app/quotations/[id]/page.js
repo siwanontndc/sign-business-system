@@ -637,7 +637,8 @@ export default function QuotationDetailPage() {
                       </td>
 
                       <td style={styles.td}>
-                        {item.description || "-"}
+                        <div style={{whiteSpace:"pre-wrap"}}>{item.description || "-"}</div>
+                        {item.included_in_total === false && <div style={{marginTop:5,fontSize:11,fontWeight:800,color:"#92400e"}}>OPTION — ไม่รวมในยอดสุทธิ</div>}
                       </td>
 
                       <td
@@ -686,10 +687,7 @@ export default function QuotationDetailPage() {
                           fontWeight: 700,
                         }}
                       >
-                        ฿
-                        {formatMoney(
-                          item.amount
-                        )}
+                        {item.included_in_total === false ? <>฿{formatMoney(item.amount)}<div style={{fontSize:11,color:"#92400e",fontWeight:700}}>ไม่รวมยอด</div></> : <>฿{formatMoney(item.amount)}</>}
                       </td>
                     </tr>
                   ))
