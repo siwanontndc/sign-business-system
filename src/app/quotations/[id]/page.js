@@ -6,23 +6,27 @@ import { supabase } from "../../lib/supabase";
 
 function fitDocumentToSingleA4() {
   const page = document.querySelector(".print-page");
-  if (!page) return;
+  const wrapper = page?.closest(".page-wrapper");
+  if (!page || !wrapper) return;
 
-  // Printable A4 area with 6 mm margins: 198 × 285 mm.
   const PX_PER_MM = 96 / 25.4;
   const targetWidthPx = 198 * PX_PER_MM;
   const targetHeightPx = 285 * PX_PER_MM;
 
-  // Reset first so repeated prints always recalculate from the document itself.
   page.style.removeProperty("zoom");
-  page.style.removeProperty("width");
-  page.style.removeProperty("max-width");
+  page.style.removeProperty("transform");
+  page.style.removeProperty("transform-origin");
   page.style.setProperty("width", "198mm", "important");
   page.style.setProperty("max-width", "none", "important");
 
-  const rect = page.getBoundingClientRect();
-  const contentWidth = Math.max(rect.width, page.scrollWidth || 0);
-  const contentHeight = Math.max(rect.height, page.scrollHeight || 0);
+  wrapper.style.setProperty("width", "198mm", "important");
+  wrapper.style.setProperty("height", "285mm", "important");
+  wrapper.style.setProperty("min-height", "285mm", "important");
+  wrapper.style.setProperty("max-height", "285mm", "important");
+  wrapper.style.setProperty("overflow", "hidden", "important");
+
+  const contentWidth = Math.max(page.scrollWidth || 0, page.getBoundingClientRect().width || 0);
+  const contentHeight = Math.max(page.scrollHeight || 0, page.getBoundingClientRect().height || 0);
 
   let scale = Math.min(
     1,
@@ -30,19 +34,28 @@ function fitDocumentToSingleA4() {
     targetHeightPx / Math.max(contentHeight, 1)
   );
 
-  // Keep the full document on one A4 page. Wider virtual page + zoom
-  // preserves readable proportions while preventing page 2/3.
-  scale = Math.max(0.35, scale);
-  page.style.setProperty("width", `${198 / scale}mm`, "important");
-  page.style.setProperty("zoom", String(scale), "important");
+  scale = Math.max(0.32, scale * 0.985);
+  page.style.setProperty("transform-origin", "top left", "important");
+  page.style.setProperty("transform", `scale(${scale})`, "important");
 }
 
 function resetDocumentPrintFit() {
   const page = document.querySelector(".print-page");
-  if (!page) return;
-  page.style.removeProperty("zoom");
-  page.style.removeProperty("width");
-  page.style.removeProperty("max-width");
+  const wrapper = page?.closest(".page-wrapper");
+  if (page) {
+    page.style.removeProperty("zoom");
+    page.style.removeProperty("transform");
+    page.style.removeProperty("transform-origin");
+    page.style.removeProperty("width");
+    page.style.removeProperty("max-width");
+  }
+  if (wrapper) {
+    wrapper.style.removeProperty("width");
+    wrapper.style.removeProperty("height");
+    wrapper.style.removeProperty("min-height");
+    wrapper.style.removeProperty("max-height");
+    wrapper.style.removeProperty("overflow");
+  }
 }
 
 function printSingleA4() {
@@ -344,7 +357,12 @@ export default function QuotationDetailPage() {
           .page-wrapper {
             background: white !important;
             padding: 0 !important;
-            margin: 0 !important;
+            margin: 0 auto !important;
+            width: 198mm !important;
+            height: 285mm !important;
+            min-height: 285mm !important;
+            max-height: 285mm !important;
+            overflow: hidden !important;
           }
 
           .print-page {
@@ -1060,7 +1078,7 @@ export default function QuotationDetailPage() {
 }
 
 function InfoRow({ label, value }) {
-  if (value === null || value === undefined || String(value).trim() === "") return null;
+  if (value === null || value === undefined || ["", "-"].includes(String(value).trim())) return null;
   return (
     <div style={styles.definitionRow}>
       <dt style={styles.definitionTerm}>
