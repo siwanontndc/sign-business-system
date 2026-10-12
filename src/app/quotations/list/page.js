@@ -35,17 +35,24 @@ export default function QuotationListPage() {
       return;
     }
 
-    const { data, error } = await supabase
-      .from("quotations")
-      .select(`
-        *,
-        customers (
-          customer_code,
-          company_name,
-          contact_name
-        )
-      `)
-      .order("created_at", { ascending: false });
+    const [{ data, error }, { data: paidInvoices, error: paidError }] = await Promise.all([
+      supabase
+        .from("quotations")
+        .select(`
+          *,
+          customers (
+            customer_code,
+            company_name,
+            contact_name
+          )
+        `)
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("invoices")
+        .select("quotation_id")
+        .eq("status", "paid")
+        .not("quotation_id", "is", null),
+    ]);
 
     if (error) {
       console.error(error);
@@ -54,7 +61,21 @@ export default function QuotationListPage() {
       return;
     }
 
-    setQuotations(data || []);
+    if (paidError) {
+      console.error(paidError);
+      alert("ตรวจสอบสถานะการชำระเงินไม่สำเร็จ: " + paidError.message);
+      setLoading(false);
+      return;
+    }
+
+    const paidQuotationIds = new Set(
+      (paidInvoices || []).map((invoice) => invoice.quotation_id).filter(Boolean)
+    );
+
+    // ใบเสนอราคาที่ชำระเงินแล้วจะออกจากหน้ารายการใบเสนอราคาอัตโนมัติ
+    setQuotations(
+      (data || []).filter((quotation) => !paidQuotationIds.has(quotation.id))
+    );
     setLoading(false);
   }
 
