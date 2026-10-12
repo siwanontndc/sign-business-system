@@ -193,6 +193,20 @@ export default function QuotationDetailPage() {
 
     return "-";
   }
+  function displayItemAmount(item) {
+    const stored = Number(item?.amount ?? item?.line_total ?? 0);
+    if (stored > 0) return stored;
+    return Number(item?.quantity || 0) * Number(item?.unit_price || 0);
+  }
+
+  function optionVat(item) {
+    return displayItemAmount(item) * (Number(quotation?.vat_percent || 0) / 100);
+  }
+
+  function optionTotal(item) {
+    return displayItemAmount(item) + optionVat(item);
+  }
+
   function getValidUntilDate(quotationDate, validDays) {
     if (!quotationDate || !validDays) return "-";
 
@@ -543,6 +557,7 @@ export default function QuotationDetailPage() {
             <h2 style={styles.sectionTitle}>
               รายการสินค้า / บริการ
             </h2>
+            {items.some(i=>i.included_in_total===false)&&<div style={{margin:"-4px 0 12px",fontSize:12,color:"#6b7280"}}>รายการ OPTION แสดงราคาแต่ละทางเลือกพร้อม VAT แยกกัน เพื่อให้ลูกค้าเปรียบเทียบสเป็ก โดยจะไม่ถูกรวมเข้ายอดสุทธิหลัก</div>}
 
             <table style={styles.table}>
               <thead>
@@ -687,7 +702,12 @@ export default function QuotationDetailPage() {
                           fontWeight: 700,
                         }}
                       >
-                        {item.included_in_total === false ? <>฿{formatMoney(item.amount)}<div style={{fontSize:11,color:"#92400e",fontWeight:700}}>ไม่รวมยอด</div></> : <>฿{formatMoney(item.amount)}</>}
+                        {item.included_in_total === false ? <>
+                          <div>฿{formatMoney(displayItemAmount(item))}</div>
+                          <div style={{fontSize:11,color:"#92400e",fontWeight:700}}>ไม่รวมยอดหลัก</div>
+                          <div style={{fontSize:11,color:"#374151",marginTop:3}}>VAT {Number(quotation.vat_percent||0)}%: ฿{formatMoney(optionVat(item))}</div>
+                          <div style={{fontSize:12,color:"#111827",fontWeight:800}}>รวม VAT: ฿{formatMoney(optionTotal(item))}</div>
+                        </> : <>฿{formatMoney(displayItemAmount(item))}</>}
                       </td>
                     </tr>
                   ))
