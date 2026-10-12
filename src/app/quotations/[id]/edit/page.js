@@ -94,8 +94,15 @@ export default function EditQuotationPage(){
   function calc(item){
     const p=getProduct(item.product_key), qty=Number(item.quantity||0), price=effectivePrice(item,p);
     if(p.calculation==="sqm"){
-      const s=parseCmSize(item.size); if(!s) return {amount:0,price,text:"กรอกขนาด เช่น 200 x 100 ซม."};
-      const area=s.width*s.height/10000; return {amount:area*qty*price,price,text:`${area.toFixed(2)} ตร.ม. × ${qty} × ฿${money(price)}`,width:s.width,height:s.height};
+      const s=parseCmSize(item.size);
+      if(s){
+        const area=s.width*s.height/10000;
+        return {amount:area*qty*price,price,text:`${area.toFixed(2)} ตร.ม. × ${qty} × ฿${money(price)}`,width:s.width,height:s.height};
+      }
+      if(qty>0){
+        return {amount:qty*price,price,text:`กรอกพื้นที่เอง: ${qty} ตร.ม. × ฿${money(price)}`};
+      }
+      return {amount:0,price,text:"ใส่พื้นที่รวมในช่องจำนวนได้เลย โดยไม่ต้องกรอกขนาด"};
     }
     if(p.calculation==="height_inch"){
       const h=parseHeightInch(item.size); if(!h) return {amount:0,price,text:"กรอกความสูง เช่น 20 นิ้ว"};
@@ -130,7 +137,7 @@ export default function EditQuotationPage(){
     for(let n=0;n<items.length;n++){
       const i=items[n],p=getProduct(i.product_key);
       if(!i.description.trim()||Number(i.quantity)<=0)return alert(`รายการที่ ${n+1}: กรุณากรอกรายการและจำนวนให้ครบ`);
-      if(p.calculation==="sqm"&&!parseCmSize(i.size))return alert(`รายการที่ ${n+1}: กรุณากรอกขนาด เช่น 200 x 100`);
+      if(p.calculation==="sqm"&&!parseCmSize(i.size)&&!(Number(i.quantity)>0))return alert(`รายการที่ ${n+1}: กรุณากรอกพื้นที่รวมในช่องจำนวน`);
       if(p.calculation==="height_inch"&&!parseHeightInch(i.size))return alert(`รายการที่ ${n+1}: กรุณากรอกความสูง เช่น 20 นิ้ว`);
     }
     setSaving(true);
@@ -163,8 +170,8 @@ export default function EditQuotationPage(){
 
     <section style={{background:"white",borderRadius:12,overflow:"hidden",marginBottom:18}}>
       <div style={{padding:16,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}><div><strong>รายการวัสดุ / งาน</strong><div style={{fontSize:12,color:"#6b7280",marginTop:4}}>เลือกประเภทงาน ระบบจะใส่หน่วยและราคามาตรฐานให้อัตโนมัติ</div></div><button style={primaryButton} onClick={addItem}>+ เพิ่มรายการ</button></div>
-      <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",minWidth:1280}}><thead><tr><th style={th}>#</th><th style={th}>ประเภทงาน / วัสดุ</th><th style={th}>รายละเอียด</th><th style={th}>ขนาด / ความสูง</th><th style={th}>จำนวน</th><th style={th}>หน่วย</th><th style={th}>ราคา/หน่วย</th><th style={th}>จำนวนเงิน</th><th style={th}>รวมยอด</th><th style={th}>จัดการ</th></tr></thead><tbody>
-      {items.map((i,index)=>{const p=getProduct(i.product_key),r=calc(i);return <tr key={i.clientId}><td style={td}>{index+1}</td><td style={td}><select style={inputStyle} value={i.product_key} onChange={e=>changeProduct(i.clientId,e.target.value)}>{products().map(x=><option key={x.product_key} value={x.product_key}>{x.name}</option>)}</select></td><td style={td}><input style={inputStyle} value={i.description} disabled={i.product_key!=="custom"} onChange={e=>updateItem(i.clientId,"description",e.target.value)}/></td><td style={td}><input style={inputStyle} value={i.size} onChange={e=>updateItem(i.clientId,"size",e.target.value)} placeholder={p.calculation==="sqm"?"200 x 100":p.calculation==="height_inch"?"20":"-"}/><small style={{display:"block",marginTop:4,color:"#6b7280"}}>{r.text}</small></td><td style={td}><input type="number" min="1" style={inputStyle} value={i.quantity} onChange={e=>updateItem(i.clientId,"quantity",e.target.value)}/></td><td style={td}>{i.unit}</td><td style={td}><input type="number" min="0" step="0.01" style={inputStyle} value={i.unit_price} disabled={p.calculation==="sheet_tier"} onChange={e=>updateItem(i.clientId,"unit_price",e.target.value)}/>{p.calculation==="sheet_tier"&&<small style={{display:"block",marginTop:4,color:"#2563eb"}}>ราคาอัตโนมัติตามจำนวน</small>}</td><td style={{...td,textAlign:"right",fontWeight:800}}>฿{money(r.amount)}</td><td style={{...td,textAlign:"center"}}><label style={{display:"inline-flex",alignItems:"center",gap:6,whiteSpace:"nowrap"}}><input type="checkbox" checked={i.included_in_total!==false} onChange={e=>updateItem(i.clientId,"included_in_total",e.target.checked)}/><span>{i.included_in_total===false?"Option ไม่รวม":"รวม"}</span></label></td><td style={td}><button style={{padding:"8px 10px",border:0,borderRadius:6,background:"#dc2626",color:"white"}} onClick={()=>removeItem(i.clientId)}>ลบ</button></td></tr>})}
+      <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",minWidth:1280}}><thead><tr><th style={th}>#</th><th style={th}>ประเภทงาน / วัสดุ</th><th style={th}>รายละเอียด</th><th style={th}>ขนาด / ความสูง (ถ้าทราบ)</th><th style={th}>จำนวน / พื้นที่รวม</th><th style={th}>หน่วย</th><th style={th}>ราคา/หน่วย</th><th style={th}>จำนวนเงิน</th><th style={th}>รวมยอด</th><th style={th}>จัดการ</th></tr></thead><tbody>
+      {items.map((i,index)=>{const p=getProduct(i.product_key),r=calc(i);return <tr key={i.clientId}><td style={td}>{index+1}</td><td style={td}><select style={inputStyle} value={i.product_key} onChange={e=>changeProduct(i.clientId,e.target.value)}>{products().map(x=><option key={x.product_key} value={x.product_key}>{x.name}</option>)}</select></td><td style={td}><textarea rows={3} style={{...inputStyle,resize:"vertical",minWidth:260}} value={i.description} onChange={e=>updateItem(i.clientId,"description",e.target.value)} placeholder="รายละเอียด / สเป็กงาน"/></td><td style={td}><input style={inputStyle} value={i.size} onChange={e=>updateItem(i.clientId,"size",e.target.value)} placeholder={p.calculation==="sqm"?"เว้นว่างได้ หรือ 200 x 100":p.calculation==="height_inch"?"20":"-"}/><small style={{display:"block",marginTop:4,color:"#6b7280"}}>{r.text}</small></td><td style={td}><input type="number" min="0" step={p.calculation==="sqm"?"0.01":"1"} style={inputStyle} value={i.quantity} onChange={e=>updateItem(i.clientId,"quantity",e.target.value)}/>{p.calculation==="sqm"&&!parseCmSize(i.size)&&<small style={{display:"block",marginTop:4,color:"#2563eb"}}>ไม่ทราบขนาด: ใส่พื้นที่รวมเป็น ตร.ม. ได้เลย</small>}</td><td style={td}>{i.unit}</td><td style={td}><input type="number" min="0" step="0.01" style={inputStyle} value={i.unit_price} disabled={p.calculation==="sheet_tier"} onChange={e=>updateItem(i.clientId,"unit_price",e.target.value)}/>{p.calculation==="sheet_tier"&&<small style={{display:"block",marginTop:4,color:"#2563eb"}}>ราคาอัตโนมัติตามจำนวน</small>}</td><td style={{...td,textAlign:"right",fontWeight:800}}>฿{money(r.amount)}</td><td style={{...td,textAlign:"center"}}><label style={{display:"inline-flex",alignItems:"center",gap:6,whiteSpace:"nowrap"}}><input type="checkbox" checked={i.included_in_total!==false} onChange={e=>updateItem(i.clientId,"included_in_total",e.target.checked)}/><span>{i.included_in_total===false?"Option ไม่รวม":"รวม"}</span></label></td><td style={td}><button style={{padding:"8px 10px",border:0,borderRadius:6,background:"#dc2626",color:"white"}} onClick={()=>removeItem(i.clientId)}>ลบ</button></td></tr>})}
       </tbody></table></div>
     </section>
 
