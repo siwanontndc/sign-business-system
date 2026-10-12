@@ -462,6 +462,15 @@ export default function QuotationDetailPage() {
             font-size: 19px !important;
           }
 
+          .print-header [style*="font-size: 22px"],
+          .print-header [style*="fontSize: 22"] {
+            font-size: 15px !important;
+          }
+
+          .print-header [style*="line-height"] {
+            line-height: 1.25 !important;
+          }
+
           .compact-info {
             gap: 8px !important;
             margin-bottom: 9px !important;
@@ -501,12 +510,40 @@ export default function QuotationDetailPage() {
           }
 
           .compact-summary {
-            grid-template-columns: minmax(0,1fr) 300px !important;
-            gap: 10px !important;
+            display: grid !important;
+            grid-template-columns: minmax(0,1.7fr) minmax(215px,.75fr) !important;
+            gap: 9px !important;
+            align-items: stretch !important;
+            break-inside: auto !important;
+            page-break-inside: auto !important;
           }
 
-          .compact-summary > div {
-            margin-bottom: 0 !important;
+          .summary-left-grid {
+            display: grid !important;
+            grid-template-columns: minmax(0,1.35fr) minmax(0,1fr) !important;
+            gap: 8px !important;
+            align-items: stretch !important;
+          }
+
+          .summary-note,
+          .summary-payment,
+          .summary-totals {
+            margin: 0 !important;
+            padding: 8px 9px !important;
+            min-height: 0 !important;
+          }
+
+          .summary-note h2,
+          .summary-payment h2 {
+            margin: 0 0 5px !important;
+            font-size: 11px !important;
+          }
+
+          .summary-note > div,
+          .summary-payment > div,
+          .summary-totals > div {
+            font-size: 9px !important;
+            line-height: 1.25 !important;
           }
 
           .print-notice {
@@ -725,7 +762,7 @@ export default function QuotationDetailPage() {
               </dl>
             </div>
 
-            <div style={styles.infoCard}>
+            <div style={styles.infoCard} className="compact-info-card">
               <h2 style={styles.sectionTitle}>
                 รายละเอียดโครงการ
               </h2>
@@ -924,10 +961,10 @@ export default function QuotationDetailPage() {
           {/* SUMMARY */}
           <section
             style={styles.summaryGrid}
-            className="avoid-break"
+            className="compact-summary"
           >
-            <div>
-              <div style={styles.noteBlock}>
+            <div style={styles.summaryLeftGrid} className="summary-left-grid">
+              <div style={styles.noteBlock} className="summary-note">
                 <h2 style={styles.sectionTitle}>
                   หมายเหตุ / เงื่อนไข
                 </h2>
@@ -939,7 +976,7 @@ export default function QuotationDetailPage() {
                 </div>
               </div>
 
-              <div style={styles.paymentBox}>
+              <div style={styles.paymentBox} className="summary-payment">
                 <h2 style={styles.paymentTitle}>
                   ข้อมูลการชำระเงิน
                 </h2>
@@ -962,7 +999,7 @@ export default function QuotationDetailPage() {
               </div>
             </div>
 
-            <div style={styles.totalsBlock}>
+            <div style={styles.totalsBlock} className="summary-totals">
               <div style={styles.totalRow}>
                 <span>รวมเป็นเงิน</span>
 
@@ -1056,7 +1093,7 @@ export default function QuotationDetailPage() {
             </div>
 
             <div style={styles.signatureBox}>
-              <div style={styles.signatureSpace} />
+              <div style={styles.signatureSpace} className="print-signature-space" />
 
               <div style={styles.signatureLabel}>
                 ผู้อนุมัติ / ลูกค้า
@@ -1273,9 +1310,9 @@ const styles = {
   },
 
   divider: {
-    height: "3px",
+    height: "2px",
     background: "#111827",
-    margin: "24px 0",
+    margin: "18px 0",
   },
 
   infoGrid: {
@@ -1287,10 +1324,10 @@ const styles = {
   },
 
   infoCard: {
-    background: "#fafafa",
-    border: "1px solid #e5e7eb",
-    borderRadius: "8px",
-    padding: "16px 18px",
+    background: "#fbfcfe",
+    border: "1px solid #e2e8f0",
+    borderRadius: "10px",
+    padding: "14px 16px",
   },
 
   sectionTitle: {
@@ -1371,9 +1408,16 @@ const styles = {
   summaryGrid: {
     display: "grid",
     gridTemplateColumns:
-      "minmax(0,1fr) 340px",
-    gap: "22px",
-    alignItems: "start",
+      "minmax(0,1.7fr) minmax(290px,.8fr)",
+    gap: "16px",
+    alignItems: "stretch",
+  },
+
+  summaryLeftGrid: {
+    display: "grid",
+    gridTemplateColumns: "minmax(0,1.35fr) minmax(0,1fr)",
+    gap: "12px",
+    alignItems: "stretch",
   },
 
   noteBlock: {
@@ -1385,8 +1429,8 @@ const styles = {
     background: "#fafafa",
     border: "1px solid #e5e7eb",
     borderRadius: "8px",
-    padding: "14px",
-    minHeight: "80px",
+    padding: "12px",
+    minHeight: "96px",
     color: "#374151",
     lineHeight: 1.6,
     fontSize: "13px",
@@ -1460,8 +1504,8 @@ const styles = {
   signatureSection: {
     display: "grid",
     gridTemplateColumns: "1fr 1fr",
-    gap: "70px",
-    marginTop: "38px",
+    gap: "56px",
+    marginTop: "22px",
   },
 
   signatureBox: {
