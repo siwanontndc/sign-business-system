@@ -101,6 +101,17 @@ export default function InvoicesPage() {
       return;
     }
 
+    const includedQuotationItems = (quotationItems || []).filter((item) => item.included_in_total !== false);
+    const includedSubtotal = includedQuotationItems.reduce(
+      (sum, item) => sum + Number(item.amount ?? item.line_total ?? 0),
+      0
+    );
+    const invoiceDiscount = Number(quotation.discount || 0);
+    const invoiceVatPercent = Number(quotation.vat_percent || 0);
+    const invoiceAfterDiscount = Math.max(includedSubtotal - invoiceDiscount, 0);
+    const invoiceVatAmount = invoiceAfterDiscount * (invoiceVatPercent / 100);
+    const invoiceGrandTotal = invoiceAfterDiscount + invoiceVatAmount;
+
     const now = new Date();
     const year = now.getFullYear();
     const running = String(Date.now()).slice(-6);
@@ -123,11 +134,11 @@ export default function InvoicesPage() {
             project_name: quotation.project_name,
             invoice_date: invoiceDate,
             due_date: dueDate,
-            subtotal: includedQuotationItems.reduce((sum,item)=>sum+Number(item.amount ?? item.line_total ?? 0),0),
-            discount: Number(quotation.discount || 0),
-            vat_percent: Number(quotation.vat_percent || 0),
-            vat_amount: Number(quotation.vat_amount || 0),
-            grand_total: Math.max(includedQuotationItems.reduce((sum,item)=>sum+Number(item.amount ?? item.line_total ?? 0),0)-Number(quotation.discount||0),0)+Number(quotation.vat_amount||0),
+            subtotal: includedSubtotal,
+            discount: invoiceDiscount,
+            vat_percent: invoiceVatPercent,
+            vat_amount: invoiceVatAmount,
+            grand_total: invoiceGrandTotal,
             note: quotation.note || "",
             status: "pending",
           },
@@ -140,8 +151,6 @@ export default function InvoicesPage() {
       setCreatingId(null);
       return;
     }
-
-    const includedQuotationItems = (quotationItems || []).filter((item) => item.included_in_total !== false);
 
     const invoiceItems = includedQuotationItems.map((item) => ({
       invoice_id: invoice.id,
