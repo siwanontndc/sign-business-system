@@ -7,49 +7,20 @@ import { supabase } from "../../lib/supabase";
 function fitDocumentToSingleA4() {
   const page = document.querySelector(".print-page");
   if (!page) return;
-
-  // Printable A4 area with 6 mm margins: 198 × 285 mm.
-  const PX_PER_MM = 96 / 25.4;
-  const targetWidthPx = 198 * PX_PER_MM;
-  const targetHeightPx = 285 * PX_PER_MM;
-
-  // Reset first so repeated prints always recalculate from the document itself.
+  // Do not use CSS zoom for print: mobile Safari/WebKit can paginate the
+  // original layout box and leave a completely blank second A4 page.
   page.style.removeProperty("zoom");
   page.style.removeProperty("width");
   page.style.removeProperty("max-width");
-  page.style.setProperty("width", "198mm", "important");
-  page.style.setProperty("max-width", "none", "important");
-
-  const rect = page.getBoundingClientRect();
-  const contentWidth = Math.max(rect.width, page.scrollWidth || 0);
-  const contentHeight = Math.max(rect.height, page.scrollHeight || 0);
-
-  let scale = Math.min(
-    1,
-    targetWidthPx / Math.max(contentWidth, 1),
-    targetHeightPx / Math.max(contentHeight, 1)
-  );
-
-  // Keep the full document on one A4 page. Wider virtual page + zoom
-  // preserves readable proportions while preventing page 2/3.
-  scale = Math.max(0.35, scale);
-  page.style.setProperty("width", `${198 / scale}mm`, "important");
-  page.style.setProperty("zoom", String(scale), "important");
 }
 
 function resetDocumentPrintFit() {
-  const page = document.querySelector(".print-page");
-  if (!page) return;
-  page.style.removeProperty("zoom");
-  page.style.removeProperty("width");
-  page.style.removeProperty("max-width");
+  fitDocumentToSingleA4();
 }
 
 function printSingleA4() {
   fitDocumentToSingleA4();
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => window.print());
-  });
+  requestAnimationFrame(() => window.print());
 }
 
 const STATUS_LABELS = {
@@ -341,15 +312,28 @@ export default function QuotationDetailPage() {
             display: none !important;
           }
 
+          /* Remove screen-only full-height wrappers; otherwise Safari may
+             create a second blank sheet after the quotation. */
+          html, body, #__next, main, .page-wrapper {
+            height: auto !important;
+            min-height: 0 !important;
+            max-height: none !important;
+          }
+
           .page-wrapper {
             background: white !important;
             padding: 0 !important;
             margin: 0 !important;
+            display: block !important;
+            overflow: visible !important;
           }
 
           .print-page {
             width: 198mm !important;
             min-height: 0 !important;
+            height: auto !important;
+            box-sizing: border-box !important;
+            overflow: visible !important;
             break-after: avoid !important;
             page-break-after: avoid !important;
             min-height: 0 !important;
