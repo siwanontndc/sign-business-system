@@ -10,6 +10,7 @@ export default function HomeButton() {
 
   return (
     <button
+      className="no-print"
       type="button"
       onClick={() => router.push("/")}
       aria-label="กลับหน้าหลัก"
