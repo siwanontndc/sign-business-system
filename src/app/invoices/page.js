@@ -123,11 +123,11 @@ export default function InvoicesPage() {
             project_name: quotation.project_name,
             invoice_date: invoiceDate,
             due_date: dueDate,
-            subtotal: Number(quotation.subtotal || 0),
+            subtotal: includedQuotationItems.reduce((sum,item)=>sum+Number(item.amount ?? item.line_total ?? 0),0),
             discount: Number(quotation.discount || 0),
             vat_percent: Number(quotation.vat_percent || 0),
             vat_amount: Number(quotation.vat_amount || 0),
-            grand_total: Number(quotation.grand_total || 0),
+            grand_total: Math.max(includedQuotationItems.reduce((sum,item)=>sum+Number(item.amount ?? item.line_total ?? 0),0)-Number(quotation.discount||0),0)+Number(quotation.vat_amount||0),
             note: quotation.note || "",
             status: "pending",
           },
@@ -141,7 +141,9 @@ export default function InvoicesPage() {
       return;
     }
 
-    const invoiceItems = (quotationItems || []).map((item) => ({
+    const includedQuotationItems = (quotationItems || []).filter((item) => item.included_in_total !== false);
+
+    const invoiceItems = includedQuotationItems.map((item) => ({
       invoice_id: invoice.id,
       description: item.description,
       width: item.width,
