@@ -5,10 +5,6 @@ import { useParams, useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabase";
 
 function fitDocumentToSingleA4() {}
-function resetDocumentPrintFit() {}
-function printSingleA4() {
-  window.print();
-}
 
 const STATUS_LABELS = {
   draft: "แบบร่าง",
@@ -282,73 +278,100 @@ export default function QuotationDetailPage() {
   return (
     <>
       <style>{`
-        .quote-title{font-size:25px;font-weight:800;text-align:right;text-decoration:underline;margin-bottom:8px}
-        .quote-company-name{font-size:21px;font-weight:800;text-align:center;margin-bottom:18px}
-        .quote-company-meta{font-size:12px;line-height:1.55;margin-bottom:10px}
-        .quote-customer-box{display:grid;grid-template-columns:1.7fr .95fr;border:1.4px solid #111827;margin-bottom:0}
-        .quote-customer-left{padding:9px 11px;border-right:1.4px solid #111827}
-        .quote-customer-right{padding:9px 11px}
-        .quote-field-row{display:grid;grid-template-columns:145px 1fr;gap:8px;min-height:24px;align-items:center;border-bottom:1px solid #d1d5db}
+        .quote-title{font-size:24px;font-weight:800;text-align:right;text-decoration:underline;margin:0 0 8px}
+        .quote-company-name{font-size:19px;font-weight:800;text-align:center;margin:0 0 14px}
+        .quote-company-meta{font-size:11.5px;line-height:1.5;margin-bottom:10px}
+        .quote-customer-box{display:grid;grid-template-columns:minmax(0,1.65fr) minmax(220px,.9fr);border:1.2px solid #111;margin-bottom:0}
+        .quote-customer-left{padding:8px 10px;border-right:1.2px solid #111;min-width:0}
+        .quote-customer-right{padding:8px 10px;min-width:0}
+        .quote-field-row{display:grid;grid-template-columns:140px minmax(0,1fr);gap:8px;min-height:23px;align-items:center;border-bottom:1px solid #d7dce2}
         .quote-field-row:last-child{border-bottom:0}
         .quote-field-label{font-weight:700}
-        .quote-meta-row{display:grid;grid-template-columns:92px 1fr;gap:8px;align-items:center;min-height:31px}
-        .quote-meta-row strong{text-align:right}
-        .quote-items-table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:11.5px}
-        .quote-items-table th,.quote-items-table td{border:1.2px solid #111827;padding:7px 6px;vertical-align:top}
+        .quote-meta-row{display:grid;grid-template-columns:80px minmax(0,1fr);gap:8px;align-items:center;min-height:28px}
+        .quote-meta-row strong{text-align:right;overflow-wrap:anywhere}
+        .quote-items-table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:11px}
+        .quote-items-table th,.quote-items-table td{border:1.1px solid #111;padding:6px 5px;vertical-align:top;overflow-wrap:anywhere}
         .quote-items-table th{text-align:center;background:#fff;font-weight:800}
-        .quote-items-table th>div{font-size:10px;font-weight:500;margin-top:2px}
-        .quote-project-row td{padding-top:9px;padding-bottom:9px}
-        .quote-project-note{white-space:pre-wrap;margin-top:5px;line-height:1.45}
-        .quote-item-row td{padding-top:11px;padding-bottom:11px}
-        .quote-description{white-space:pre-wrap;font-weight:700;line-height:1.45}
-        .quote-subdetail{font-size:10px;margin-top:4px;color:#374151}
+        .quote-items-table th>div{font-size:9px;font-weight:500;margin-top:2px}
+        .quote-project-row td{padding-top:7px;padding-bottom:7px}
+        .quote-project-note{white-space:pre-wrap;margin-top:4px;line-height:1.4}
+        .quote-item-row td{padding-top:9px;padding-bottom:9px}
+        .quote-description{white-space:pre-wrap;font-weight:700;line-height:1.4}
+        .quote-subdetail{font-size:9px;margin-top:3px;color:#374151}
         .quote-center{text-align:center;vertical-align:middle!important}
         .quote-money{text-align:right;white-space:nowrap;vertical-align:middle!important}
         .quote-total{font-weight:800}
-        .quote-empty{text-align:center;padding:20px!important}
-        .quote-bottom{display:grid;grid-template-columns:1fr 270px;border:1.2px solid #111827;border-top:0;min-height:100px}
-        .quote-bottom-left{padding:12px 14px;display:flex;align-items:flex-end}
-        .quote-payment{font-size:10.5px;line-height:1.45}
-        .quote-payment strong{display:block;font-size:11.5px;margin-bottom:4px}
-        .quote-summary{border-left:1.2px solid #111827;padding:0}
-        .quote-summary>div:not(.quote-choice-note){display:flex;justify-content:space-between;gap:12px;padding:7px 9px;border-bottom:1px solid #111827;font-size:11px}
+        .quote-empty{text-align:center;padding:18px!important}
+        .quote-bottom{display:grid;grid-template-columns:minmax(0,1fr) 255px;border:1.1px solid #111;border-top:0;min-height:88px}
+        .quote-bottom-left{padding:10px 12px;display:flex;align-items:flex-end;min-width:0}
+        .quote-payment{font-size:9.6px;line-height:1.4}
+        .quote-payment strong{display:block;font-size:10.5px;margin-bottom:3px}
+        .quote-summary{border-left:1.1px solid #111;padding:0;min-width:0}
+        .quote-summary>div:not(.quote-choice-note){display:flex;justify-content:space-between;gap:10px;padding:6px 8px;border-bottom:1px solid #111;font-size:9.6px}
         .quote-summary>div:last-child{border-bottom:0}
-        .quote-grand{font-size:13px!important;font-weight:800}
-        .quote-choice-note{padding:14px 12px;display:flex;flex-direction:column;gap:5px;font-size:11px}
-        .quote-signatures{display:grid;grid-template-columns:1fr 1fr;border:1.2px solid #111827;border-top:0;min-height:115px}
-        .quote-signatures>div{text-align:center;padding:10px 14px;font-size:11px}
-        .quote-signatures>div+div{border-left:1.2px solid #111827}
-        .quote-sign-space{height:42px}
+        .quote-grand{font-size:11.5px!important;font-weight:800}
+        .quote-choice-note{padding:10px;display:flex;flex-direction:column;gap:4px;font-size:9.5px}
+        .quote-signatures{display:grid;grid-template-columns:1fr 1fr;border:1.1px solid #111;border-top:0;min-height:102px;margin-top:auto}
+        .quote-signatures>div{text-align:center;padding:9px 12px;font-size:9.5px}
+        .quote-signatures>div+div{border-left:1.1px solid #111}
+        .quote-sign-space{height:33px}
+
         @media print{
-          @page{size:A4 portrait;margin:10mm}
-          html,body{margin:0!important;padding:0!important;background:#fff!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+          @page{size:A4 portrait;margin:0}
+          html,body{width:210mm!important;height:297mm!important;margin:0!important;padding:0!important;background:#fff!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+          body{overflow:visible!important}
           .no-print{display:none!important}
-          .page-wrapper{width:190mm!important;height:277mm!important;min-height:277mm!important;max-height:277mm!important;margin:0 auto!important;padding:0!important;background:#fff!important;overflow:hidden!important}
-          .print-page{width:190mm!important;height:277mm!important;max-width:none!important;margin:0 auto!important;padding:7mm 8mm 8mm!important;box-sizing:border-box!important;background:#fff!important;border-radius:0!important;box-shadow:none!important;display:flex!important;flex-direction:column!important}
-          .quote-title{font-size:22px;margin-bottom:6px}
-          .quote-company-name{font-size:18px;margin-bottom:12px}
-          .quote-company-meta{font-size:10.2px;line-height:1.45;margin-bottom:9px}
-          .quote-customer-left,.quote-customer-right{padding:6px 8px}
-          .quote-field-row{grid-template-columns:118px 1fr;min-height:21px;font-size:10px}
-          .quote-meta-row{grid-template-columns:72px 1fr;min-height:25px;font-size:10px}
-          .quote-items-table{font-size:10px}
-          .quote-items-table th,.quote-items-table td{padding:5px 5px;line-height:1.32}
-          .quote-items-table th>div{font-size:8px}
-          .quote-project-row td{padding-top:7px;padding-bottom:7px}
-          .quote-project-note{margin-top:3px;line-height:1.3}
-          .quote-item-row td{padding-top:9px;padding-bottom:9px}
-          .quote-description{line-height:1.3}
-          .quote-subdetail{font-size:8.2px}
-          .quote-bottom{grid-template-columns:1fr 245px;min-height:86px}
-          .quote-bottom-left{padding:8px 10px}
-          .quote-payment{font-size:9.2px;line-height:1.4}
-          .quote-payment strong{font-size:10px;margin-bottom:3px}
-          .quote-summary>div:not(.quote-choice-note){padding:6px 8px;font-size:9.5px}
-          .quote-grand{font-size:11px!important}
-          .quote-choice-note{padding:9px;font-size:8.8px}
-          .quote-signatures{min-height:96px;margin-top:auto!important}
-          .quote-signatures>div{padding:8px 12px;font-size:9.5px}
-          .quote-sign-space{height:30px}
+          .page-wrapper{
+            width:210mm!important;
+            height:297mm!important;
+            min-height:297mm!important;
+            max-height:297mm!important;
+            margin:0!important;
+            padding:0!important;
+            background:#fff!important;
+            overflow:visible!important;
+          }
+          .print-page{
+            width:210mm!important;
+            height:297mm!important;
+            min-height:297mm!important;
+            max-height:297mm!important;
+            margin:0!important;
+            padding:11mm 13mm 11mm!important;
+            box-sizing:border-box!important;
+            background:#fff!important;
+            border-radius:0!important;
+            box-shadow:none!important;
+            display:flex!important;
+            flex-direction:column!important;
+            overflow:hidden!important;
+          }
+
+          .quote-title{font-size:20px;margin-bottom:5px}
+          .quote-company-name{font-size:16px;margin-bottom:9px}
+          .quote-company-meta{font-size:9.2px;line-height:1.35;margin-bottom:7px}
+          .quote-customer-box{grid-template-columns:minmax(0,1.65fr) minmax(54mm,.9fr)}
+          .quote-customer-left,.quote-customer-right{padding:5px 7px}
+          .quote-field-row{grid-template-columns:31mm minmax(0,1fr);min-height:18px;font-size:8.8px}
+          .quote-meta-row{grid-template-columns:19mm minmax(0,1fr);min-height:20px;font-size:8.8px}
+          .quote-items-table{font-size:8.9px}
+          .quote-items-table th,.quote-items-table td{padding:4px 4px;line-height:1.25}
+          .quote-items-table th>div{font-size:7.8px}
+          .quote-project-row td{padding-top:5px;padding-bottom:5px}
+          .quote-project-note{margin-top:2px;line-height:1.25}
+          .quote-item-row td{padding-top:6px;padding-bottom:6px}
+          .quote-description{line-height:1.25}
+          .quote-subdetail{font-size:7.8px}
+          .quote-bottom{grid-template-columns:minmax(0,1fr) 57mm;min-height:67px}
+          .quote-bottom-left{padding:6px 8px}
+          .quote-payment{font-size:7.8px;line-height:1.25}
+          .quote-payment strong{font-size:8.5px;margin-bottom:2px}
+          .quote-summary>div:not(.quote-choice-note){padding:4px 6px;font-size:7.9px}
+          .quote-grand{font-size:9.3px!important}
+          .quote-choice-note{padding:7px;font-size:7.8px}
+          .quote-signatures{min-height:76px}
+          .quote-signatures>div{padding:6px 9px;font-size:8px}
+          .quote-sign-space{height:21px}
           tr{break-inside:avoid;page-break-inside:avoid}
         }
       `}</style>
