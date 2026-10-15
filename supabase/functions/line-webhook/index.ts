@@ -6,6 +6,7 @@ const env=(n:string)=>(Deno.env.get(n)||'').trim();
 const WORK_GROUP_ID='Cf630d4a5d3e49dd721ff3d149f53e88b';
 const FINANCE_GROUP_ID='C38847122b9046058c55f79261b6695fc';
 const BATCH_MINUTES=5;
+const WORK_CONTEXT_HOURS=12;
 
 async function validSignature(body:string,signature:string,secret:string){
   try{
@@ -55,7 +56,7 @@ async function chooseOrCreateSurvey(db:any,event:any){
     const existing=await db.from('site_surveys').select('id,survey_no,customer_name,project_name,created_at').eq('id',ctx.data.survey_id).maybeSingle();
     if(!existing.error&&existing.data){
       await db.from('survey_line_contexts').update({
-        expires_at:new Date(Date.now()+BATCH_MINUTES*60*1000).toISOString(),
+        expires_at:new Date(Date.now()+WORK_CONTEXT_HOURS*60*60*1000).toISOString(),
         updated_at:new Date().toISOString()
       }).eq('group_id',groupId);
       return {survey:existing.data,created:false};
@@ -70,7 +71,7 @@ async function chooseOrCreateSurvey(db:any,event:any){
     customer_name:'รอจัดเข้าลูกค้า (LINE)',
     project_name:`ชุดรูป LINE ${bangkokLabel(now)}`,
     status:'surveying',
-    note:`สร้างอัตโนมัติจาก LINE กลุ่มงาน; รูปที่ส่งต่อเนื่องภายใน ${BATCH_MINUTES} นาทีจะอยู่ชุดเดียวกัน`
+    note:`สร้างอัตโนมัติจาก LINE กลุ่มงาน; ระบบจะจัดข้อความและรูปที่เกี่ยวข้องให้อยู่ในงานเดียวกัน`
   }).select('id,survey_no,customer_name,project_name,created_at').single();
   if(ins.error)throw ins.error;
 
@@ -78,7 +79,7 @@ async function chooseOrCreateSurvey(db:any,event:any){
     group_id:groupId,
     survey_id:ins.data.id,
     set_by_line_user_id:event.source?.userId?String(event.source.userId):null,
-    expires_at:new Date(Date.now()+BATCH_MINUTES*60*1000).toISOString(),
+    expires_at:new Date(Date.now()+WORK_CONTEXT_HOURS*60*60*1000).toISOString(),
     updated_at:new Date().toISOString()
   },{onConflict:'group_id'});
   if(context.error)throw context.error;
@@ -156,7 +157,7 @@ async function handleWorkGroupImage(db:any,event:any){
   }
 
   if(picked.created){
-    await replyText(event.replyToken,`✅ เริ่มชุดรูปใหม่แล้ว\n${picked.survey.survey_no}\nรูปที่ส่งต่อภายใน ${BATCH_MINUTES} นาทีจะอยู่ชุดเดียวกัน`);
+    await replyText(event.replyToken,`✅ เริ่มงานใหม่แล้ว\n${picked.survey.survey_no}\nระบบจะรวบรวมข้อความ รูป และงานแก้ไขที่เกี่ยวข้องไว้ในงานเดียวกัน`);
   }
   return true;
 }
@@ -198,6 +199,192 @@ function aiTextOf(p:any){
   if(typeof p?.output_text==='string'&&p.output_text)return p.output_text;
   return (p?.output||[]).flatMap((x:any)=>x.content||[]).map((x:any)=>x.text||'').join('');
 }
+
+function isRevisionText(text:string){
+  return /แก้|แก้ไข|ปรับ|ปรับแก้|เปลี่ยน|เพิ่ม|ลด|ย้าย|ขยับ|เปลี่ยนแบบ|แบบใหม่|เวอร์ชัน|revision|rev\.?/i.test(text||'');
+}
+
+async function recentWorkJobs(db:any){
+  const since=new Date(Date.now()-120*24*60*60*1000).toISOString();
+  const {data,error}=await db.from('site_surveys')
+    .select('id,survey_no,customer_name,project_name,note,status,updated_at,created_at')
+    .gte('created_at',since)
+    .order('updated_at',{ascending:false})
+    .limit(25);
+  if(error)return[];
+  return data||[];
+}
+
+async function activeWorkContext(db:any,groupId:string){
+  if(!groupId)return null;
+  const {data,error}=await db.from('survey_line_contexts')
+    .select('survey_id,expires_at')
+    .eq('group_id',groupId)
+    .maybeSingle();
+  if(error||!data||new Date(data.expires_at).getTime()<=Date.now())return null;
+  return data;
+}
+
+async function setWorkContext(db:any,event:any,surveyId:string){
+  const groupId=String(event.source?.groupId||'');
+  if(!groupId)return;
+  await db.from('job_line_contexts').delete().eq('group_id',groupId);
+  const {error}=await db.from('survey_line_contexts').upsert({
+    group_id:groupId,
+    survey_id:surveyId,
+    set_by_line_user_id:event.source?.userId?String(event.source.userId):null,
+    expires_at:new Date(Date.now()+WORK_CONTEXT_HOURS*60*60*1000).toISOString(),
+    updated_at:new Date().toISOString()
+  },{onConflict:'group_id'});
+  if(error)throw error;
+}
+
+async function saveWorkUpdate(db:any,event:any,surveyId:string,type:string,text:string,summary:string,confidence:number){
+  const m=event?.message;
+  const row={
+    group_id:String(event.source?.groupId||''),
+    line_message_id:m?.id?String(m.id):null,
+    line_user_id:event.source?.userId?String(event.source.userId):null,
+    survey_id:surveyId,
+    update_type:type,
+    raw_text:text||null,
+    summary:summary||text||null,
+    ai_confidence:Math.max(0,Math.min(1,Number(confidence)||0))
+  };
+  const {error}=await db.from('line_work_updates').upsert(row,{onConflict:'line_message_id',ignoreDuplicates:true});
+  if(error)console.error('save work update failed',error.message);
+}
+
+async function handleWorkGroupText(db:any,event:any){
+  const text=String(event?.message?.text||'').trim();
+  const groupId=String(event.source?.groupId||'');
+  if(!text||!groupId)return false;
+
+  const current=await activeWorkContext(db,groupId);
+  const jobs=await recentWorkJobs(db);
+  const currentJob=current?jobs.find((j:any)=>j.id===current.survey_id):null;
+
+  // Strong revision wording defaults to the current job so "แก้..." stays in the same work thread.
+  if(currentJob&&isRevisionText(text)){
+    const summary=text.replace(/\s+/g,' ').trim().slice(0,500);
+    await setWorkContext(db,event,currentJob.id);
+    await saveWorkUpdate(db,event,currentJob.id,'revision',text,summary,0.98);
+    const existingNote=String(currentJob.note||'').trim();
+    const line=`[${bangkokLabel(new Date())}] แก้ไข: ${summary}`;
+    await db.from('site_surveys').update({
+      note:(existingNote?existingNote+'\n':'')+line,
+      updated_at:new Date().toISOString()
+    }).eq('id',currentJob.id);
+    const {count}=await db.from('line_work_updates').select('id',{count:'exact',head:true}).eq('survey_id',currentJob.id).eq('update_type','revision');
+    await replyText(event.replyToken,`✏️ รวมเป็นงานเดิมแล้ว\n${currentJob.survey_no} — ${currentJob.customer_name||'-'}\n${currentJob.project_name||'ไม่ระบุชื่องาน'}\nแก้ไขครั้งที่ ${count||1}`);
+    return true;
+  }
+
+  const aiKey=env('OPENAI_API_KEY');
+  let decision:any=null;
+  if(aiKey){
+    const compactJobs=jobs.map((j:any)=>({
+      id:j.id,
+      survey_no:j.survey_no,
+      customer_name:j.customer_name,
+      project_name:j.project_name,
+      status:j.status,
+      note:String(j.note||'').slice(-500)
+    }));
+    const schema={type:'object',additionalProperties:false,properties:{
+      match_id:{type:['string','null']},
+      new_job:{type:'boolean'},
+      is_revision:{type:'boolean'},
+      customer_name:{type:['string','null']},
+      project_name:{type:['string','null']},
+      summary:{type:'string'},
+      confidence:{type:'number'}
+    },required:['match_id','new_job','is_revision','customer_name','project_name','summary','confidence']};
+    const prompt=`คุณเป็น AI จัดกลุ่มงานของบริษัททำป้ายจากข้อความ LINE
+เป้าหมาย: รวมข้อความที่พูดถึงลูกค้า/โครงการเดียวกันให้อยู่ "งานเดียว" และถ้าเป็นการแก้แบบ ปรับแบบ เปลี่ยนสเป็ก เพิ่ม/ลด/ย้าย ให้ถือเป็น revision ของงานเดิม ไม่สร้างงานใหม่
+สร้างงานใหม่เฉพาะเมื่อข้อความชัดเจนว่าเป็นคนละลูกค้า คนละสถานที่ หรือคนละโครงการ
+ถ้ายังไม่แน่ใจและมี current_job ให้เลือก current_job มากกว่าสร้างงานใหม่
+คืน JSON เท่านั้น
+
+current_job: ${JSON.stringify(currentJob?{id:currentJob.id,survey_no:currentJob.survey_no,customer_name:currentJob.customer_name,project_name:currentJob.project_name}:null)}
+recent_jobs: ${JSON.stringify(compactJobs)}
+ข้อความใหม่: ${text}`;
+    try{
+      const r=await fetch('https://api.openai.com/v1/responses',{
+        method:'POST',
+        headers:{authorization:`Bearer ${aiKey}`,'content-type':'application/json'},
+        body:JSON.stringify({
+          model:env('OPENAI_VISION_MODEL')||'gpt-4.1-mini',
+          input:[{role:'user',content:[{type:'input_text',text:prompt}]}],
+          text:{format:{type:'json_schema',name:'line_work_grouping',strict:true,schema}},
+          max_output_tokens:700
+        })
+      });
+      if(r.ok){
+        const raw=await r.json();
+        decision=JSON.parse(aiTextOf(raw));
+      }
+    }catch(error){console.error('work text AI failed',error);}
+  }
+
+  // Conservative fallback: use current job unless the message clearly introduces a new job/customer.
+  if(!decision){
+    decision={
+      match_id:currentJob?.id||null,
+      new_job:!currentJob,
+      is_revision:isRevisionText(text),
+      customer_name:null,
+      project_name:text.slice(0,100),
+      summary:text.slice(0,500),
+      confidence:currentJob?0.65:0.55
+    };
+  }
+
+  let job:any=null;
+  const match=jobs.find((j:any)=>j.id===decision.match_id);
+  if(match && Number(decision.confidence)>=0.68){
+    job=match;
+  }else if(currentJob && !decision.new_job){
+    job=currentJob;
+  }
+
+  let created=false;
+  if(!job){
+    const surveyNo=makeSurveyNo();
+    const customer=String(decision.customer_name||'รอระบุลูกค้า (LINE)').trim();
+    const project=String(decision.project_name||decision.summary||text).trim().slice(0,160);
+    const ins=await db.from('site_surveys').insert({
+      survey_no:surveyNo,
+      customer_name:customer,
+      project_name:project||`งานจาก LINE ${bangkokLabel(new Date())}`,
+      status:'surveying',
+      note:`[LINE] ${String(decision.summary||text).slice(0,700)}`
+    }).select('id,survey_no,customer_name,project_name,note,status,created_at,updated_at').single();
+    if(ins.error)throw ins.error;
+    job=ins.data;created=true;
+  }else{
+    const patch:any={updated_at:new Date().toISOString()};
+    if((!job.customer_name||/รอระบุ|LINE/.test(job.customer_name))&&decision.customer_name)patch.customer_name=String(decision.customer_name).trim();
+    if((!job.project_name||/^ชุดรูป LINE|^งานจาก LINE/.test(job.project_name))&&decision.project_name)patch.project_name=String(decision.project_name).trim().slice(0,160);
+    const line=`[${bangkokLabel(new Date())}] ${decision.is_revision?'แก้ไข':'อัปเดต'}: ${String(decision.summary||text).slice(0,700)}`;
+    patch.note=(String(job.note||'').trim()?String(job.note).trim()+'\n':'')+line;
+    await db.from('site_surveys').update(patch).eq('id',job.id);
+    job={...job,...patch};
+  }
+
+  await setWorkContext(db,event,job.id);
+  const updateType=created?'new_job':decision.is_revision?'revision':'update';
+  await saveWorkUpdate(db,event,job.id,updateType,text,String(decision.summary||text).slice(0,700),Number(decision.confidence)||0);
+
+  if(created){
+    await replyText(event.replyToken,`🆕 สรุปเป็นงานใหม่แล้ว\n${job.survey_no} — ${job.customer_name||'-'}\n${job.project_name||'ไม่ระบุชื่องาน'}\nส่งรูปหรือรายละเอียดต่อได้เลย ระบบจะรวมไว้ในงานนี้`);
+  }else if(decision.is_revision){
+    const {count}=await db.from('line_work_updates').select('id',{count:'exact',head:true}).eq('survey_id',job.id).eq('update_type','revision');
+    await replyText(event.replyToken,`✏️ วิเคราะห์เป็นงานแก้ไขของงานเดิม\n${job.survey_no} — ${job.customer_name||'-'}\n${job.project_name||'ไม่ระบุชื่องาน'}\nแก้ไขครั้งที่ ${count||1}`);
+  }
+  return true;
+}
+
 function financeHint(text:string){
   return{
     direction:/รายรับ|โอนเข้า|รับเงิน|ยอดเข้า/i.test(text)?'income':/รายจ่าย|โอนออก|จ่าย|ซื้อ|ชำระ|ค่าน้ำมัน|ค่าแรง|ค่าวัสดุ|ค่าสี|ค่าไฟ/i.test(text)?'expense':null,
@@ -346,7 +533,7 @@ async function linkContext(db:any,event:any,rowId:string,text:string,draft:any){
 
 Deno.serve(async(req)=>{
   const secret=env('LINE_CHANNEL_SECRET'),serviceKey=env('SUPABASE_SERVICE_ROLE_KEY'),url=env('SUPABASE_URL');
-  if(req.method==='GET')return json({ok:true,version:23,batchMinutes:BATCH_MINUTES,dedupe:'sha256-per-survey',secretConfigured:!!secret,serviceRoleConfigured:!!serviceKey,urlConfigured:!!url,tokenConfigured:!!env('LINE_CHANNEL_ACCESS_TOKEN')});
+  if(req.method==='GET')return json({ok:true,version:24,batchMinutes:BATCH_MINUTES,dedupe:'sha256-per-survey',secretConfigured:!!secret,serviceRoleConfigured:!!serviceKey,urlConfigured:!!url,tokenConfigured:!!env('LINE_CHANNEL_ACCESS_TOKEN')});
   if(req.method!=='POST')return json({error:'Method not allowed'},405);
   if(!secret)return json({error:'LINE_CHANNEL_SECRET missing'},503);
   const body=await req.text(),signature=req.headers.get('x-line-signature')||'';
@@ -354,17 +541,22 @@ Deno.serve(async(req)=>{
   if(!(await validSignature(body,signature,secret)))return json({error:'Invalid signature'},401);
   let payload:any;try{payload=JSON.parse(body);}catch{return json({error:'Invalid JSON'},400);}
   const events=Array.isArray(payload?.events)?payload.events:[];
-  if(events.length===0)return json({ok:true,verified:true,version:23});
-  if(!url||!serviceKey)return json({error:'Database configuration missing',version:23},503);
+  if(events.length===0)return json({ok:true,verified:true,version:24});
+  if(!url||!serviceKey)return json({error:'Database configuration missing',version:24},503);
   const db=createClient(url,serviceKey,{auth:{persistSession:false,autoRefreshToken:false}});
   let accepted=0,failed=0,surveyAccepted=0;
   for(const event of events){
     if(event?.type!=='message'||!event?.message)continue;
     const m=event.message;
     const groupId=event.source?.groupId?String(event.source.groupId):'';
+    if(groupId===WORK_GROUP_ID&&m.type==='text'){
+      try{await handleWorkGroupText(db,event);accepted++;surveyAccepted++;}
+      catch(error){failed++;console.error('work text error',error);await replyText(event.replyToken,'⚠️ วิเคราะห์/จัดกลุ่มงานไม่สำเร็จ ระบบเก็บข้อความไว้ตรวจภายหลัง');}
+      continue;
+    }
     if(groupId===WORK_GROUP_ID&&m.type==='image'){
       try{await handleWorkGroupImage(db,event);accepted++;surveyAccepted++;}
-      catch(error){failed++;console.error('survey image error',error);await replyText(event.replyToken,'⚠️ รับรูปสำรวจไม่สำเร็จ ระบบแจ้งข้อผิดพลาดแล้ว');}
+      catch(error){failed++;console.error('survey image error',error);await replyText(event.replyToken,'⚠️ รับรูปงานไม่สำเร็จ ระบบแจ้งข้อผิดพลาดแล้ว');}
       continue;
     }
     const eventId=String(event.webhookEventId||m.id||'');if(!eventId)continue;
@@ -380,6 +572,6 @@ Deno.serve(async(req)=>{
     if(m.type==='text')await linkContext(db,event,String(saved.id),text,draft);
     accepted++;
   }
-  if(failed>0)return json({ok:false,accepted,failed,surveyAccepted,version:23},500);
-  return json({ok:true,accepted,failed:0,surveyAccepted,version:23},200);
+  if(failed>0)return json({ok:false,accepted,failed,surveyAccepted,version:24},500);
+  return json({ok:true,accepted,failed:0,surveyAccepted,version:24},200);
 });
