@@ -98,7 +98,33 @@ export async function POST(request) {
 
     const { data, error } = await supabase.from("line_account_entries").update(update).eq("id", id).select().single();
     if (error) throw error;
-    return NextResponse.json({ entry: data });
+
+    let auto_review = { status: "needs_review" };
+    const canAutoApprove =
+      update.ai_confidence >= 0.93 &&
+      ["income","expense"].includes(update.entry_type) &&
+      Number(update.amount || 0) > 0 &&
+      update.suggested_transaction_date &&
+      String(update.suggested_reference_no || "").trim();
+
+    if (canAutoApprove) {
+      const { data: autoResult, error: autoError } = await supabase.rpc("auto_approve_line_account_entry", {
+        p_id: id,
+        p_direction: update.entry_type,
+        p_amount: update.amount,
+        p_category: update.category || "อื่น ๆ",
+        p_description: update.suggested_description || null,
+        p_project_name: update.job_reference || null,
+        p_transaction_date: update.suggested_transaction_date,
+        p_counterparty: update.suggested_counterparty || null,
+        p_bank_name: update.suggested_bank_name || null,
+        p_reference_no: update.suggested_reference_no || null,
+        p_ai_confidence: update.ai_confidence,
+      });
+      if (!autoError && autoResult) auto_review = autoResult;
+    }
+
+    return NextResponse.json({ entry: data, auto_review });
   } catch (error) {
     console.error("LINE finance analyze error", error);
     return NextResponse.json({ error: error?.message || "Analyze failed" }, { status: 500 });
