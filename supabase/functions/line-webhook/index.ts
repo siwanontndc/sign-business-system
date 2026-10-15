@@ -294,7 +294,38 @@ counterparty คืออีกฝั่งของรายการ
   };
   const {error:we}=await db.from('line_account_entries').update(update).eq('id',rowId).eq('status','pending');
   if(we){console.error('auto finance save failed',rowId,we.message);return false;}
-  console.log('auto finance analyzed',rowId,used,confidence);
+
+  let autoStatus='needs_review';
+  const canAutoApprove=
+    confidence>=0.93 &&
+    direction &&
+    Number.isFinite(amount) && amount>0 &&
+    date &&
+    String(parsed.reference_no||'').trim();
+
+  if(canAutoApprove){
+    const {data:autoResult,error:autoError}=await db.rpc('auto_approve_line_account_entry',{
+      p_id:rowId,
+      p_direction:direction,
+      p_amount:amount,
+      p_category:category||'อื่น ๆ',
+      p_description:e.linked_note||parsed.description||null,
+      p_project_name:parsed.project_name||null,
+      p_transaction_date:date,
+      p_counterparty:parsed.counterparty||null,
+      p_bank_name:parsed.bank_name||null,
+      p_reference_no:parsed.reference_no||null,
+      p_ai_confidence:confidence
+    });
+    if(autoError){
+      console.error('auto finance approve failed',rowId,autoError.message);
+    }else{
+      autoStatus=autoResult?.status||'needs_review';
+      console.log('auto finance review result',rowId,autoStatus,confidence);
+    }
+  }
+
+  console.log('auto finance analyzed',rowId,used,confidence,autoStatus);
   return true;
 }
 
@@ -315,7 +346,7 @@ async function linkContext(db:any,event:any,rowId:string,text:string,draft:any){
 
 Deno.serve(async(req)=>{
   const secret=env('LINE_CHANNEL_SECRET'),serviceKey=env('SUPABASE_SERVICE_ROLE_KEY'),url=env('SUPABASE_URL');
-  if(req.method==='GET')return json({ok:true,version:22,batchMinutes:BATCH_MINUTES,dedupe:'sha256-per-survey',secretConfigured:!!secret,serviceRoleConfigured:!!serviceKey,urlConfigured:!!url,tokenConfigured:!!env('LINE_CHANNEL_ACCESS_TOKEN')});
+  if(req.method==='GET')return json({ok:true,version:23,batchMinutes:BATCH_MINUTES,dedupe:'sha256-per-survey',secretConfigured:!!secret,serviceRoleConfigured:!!serviceKey,urlConfigured:!!url,tokenConfigured:!!env('LINE_CHANNEL_ACCESS_TOKEN')});
   if(req.method!=='POST')return json({error:'Method not allowed'},405);
   if(!secret)return json({error:'LINE_CHANNEL_SECRET missing'},503);
   const body=await req.text(),signature=req.headers.get('x-line-signature')||'';
@@ -323,8 +354,8 @@ Deno.serve(async(req)=>{
   if(!(await validSignature(body,signature,secret)))return json({error:'Invalid signature'},401);
   let payload:any;try{payload=JSON.parse(body);}catch{return json({error:'Invalid JSON'},400);}
   const events=Array.isArray(payload?.events)?payload.events:[];
-  if(events.length===0)return json({ok:true,verified:true,version:22});
-  if(!url||!serviceKey)return json({error:'Database configuration missing',version:22},503);
+  if(events.length===0)return json({ok:true,verified:true,version:23});
+  if(!url||!serviceKey)return json({error:'Database configuration missing',version:23},503);
   const db=createClient(url,serviceKey,{auth:{persistSession:false,autoRefreshToken:false}});
   let accepted=0,failed=0,surveyAccepted=0;
   for(const event of events){
@@ -349,6 +380,6 @@ Deno.serve(async(req)=>{
     if(m.type==='text')await linkContext(db,event,String(saved.id),text,draft);
     accepted++;
   }
-  if(failed>0)return json({ok:false,accepted,failed,surveyAccepted,version:22},500);
-  return json({ok:true,accepted,failed:0,surveyAccepted,version:22},200);
+  if(failed>0)return json({ok:false,accepted,failed,surveyAccepted,version:23},500);
+  return json({ok:true,accepted,failed:0,surveyAccepted,version:23},200);
 });
