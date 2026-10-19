@@ -204,6 +204,23 @@ function isRevisionText(text:string){
   return /แก้|แก้ไข|ปรับ|ปรับแก้|เปลี่ยน|เพิ่ม|ลด|ย้าย|ขยับ|เปลี่ยนแบบ|แบบใหม่|เวอร์ชัน|revision|rev\.?/i.test(text||'');
 }
 
+function isNonWorkChat(text:string){
+  const t=String(text||'').replace(/\s+/g,' ').trim();
+  if(!t)return true;
+  if(/^(โอเค|ok|ครับ|ค่ะ|คะ|ขอบคุณ|รับทราบ|ได้ครับ|ได้ค่ะ|อืม|อ่อ|555+|ฮ่า+)/i.test(t))return true;
+  if(/รายงาน.*ไม่มี|งานเยอะเกิน|ไม่ทำ|ไม่เอา|พักก่อน|เดี๋ยวค่อย|คุยเล่น|ทดสอบระบบ/i.test(t))return true;
+  return false;
+}
+
+function isLikelyWorkText(text:string){
+  const t=String(text||'').replace(/\s+/g,' ').trim();
+  if(isNonWorkChat(t))return false;
+  if(isRevisionText(t))return true;
+  if(/#?(งาน|job|สำรวจ|survey|สรุปงาน|ปิดงาน)/i.test(t))return true;
+  if(/ป้าย|แบบ|โลโก้|ขนาด|สี|วัสดุ|คอมโพสิต|ไวนิล|สติ๊กเกอร์|สติกเกอร์|ไฟ|LED|โครง|เหล็ก|ติดตั้ง|ผลิต|หน้างาน|ลูกค้า|ร้าน|โครงการ|สเป็ก|spec|เมตร|ตร\.ม|ซม\.|เซนติเมตร|ราคา|จำนวน|ด้านหน้า|ด้านหลัง|ซ้าย|ขวา/i.test(t))return true;
+  return false;
+}
+
 async function recentWorkJobs(db:any){
   const since=new Date(Date.now()-120*24*60*60*1000).toISOString();
   const {data,error}=await db.from('site_surveys')
@@ -263,6 +280,11 @@ async function handleWorkGroupText(db:any,event:any){
   const current=await activeWorkContext(db,groupId);
   const jobs=await recentWorkJobs(db);
   const currentJob=current?jobs.find((j:any)=>j.id===current.survey_id):null;
+
+  // Ignore ordinary conversation. Only actual work instructions/details should enter the job system.
+  if(!isLikelyWorkText(text)){
+    return false;
+  }
 
   // Strong revision wording defaults to the current job so "แก้..." stays in the same work thread.
   if(currentJob&&isRevisionText(text)){
@@ -533,7 +555,7 @@ async function linkContext(db:any,event:any,rowId:string,text:string,draft:any){
 
 Deno.serve(async(req)=>{
   const secret=env('LINE_CHANNEL_SECRET'),serviceKey=env('SUPABASE_SERVICE_ROLE_KEY'),url=env('SUPABASE_URL');
-  if(req.method==='GET')return json({ok:true,version:24,batchMinutes:BATCH_MINUTES,dedupe:'sha256-per-survey',secretConfigured:!!secret,serviceRoleConfigured:!!serviceKey,urlConfigured:!!url,tokenConfigured:!!env('LINE_CHANNEL_ACCESS_TOKEN')});
+  if(req.method==='GET')return json({ok:true,version:25,batchMinutes:BATCH_MINUTES,dedupe:'sha256-per-survey',secretConfigured:!!secret,serviceRoleConfigured:!!serviceKey,urlConfigured:!!url,tokenConfigured:!!env('LINE_CHANNEL_ACCESS_TOKEN')});
   if(req.method!=='POST')return json({error:'Method not allowed'},405);
   if(!secret)return json({error:'LINE_CHANNEL_SECRET missing'},503);
   const body=await req.text(),signature=req.headers.get('x-line-signature')||'';
@@ -541,8 +563,8 @@ Deno.serve(async(req)=>{
   if(!(await validSignature(body,signature,secret)))return json({error:'Invalid signature'},401);
   let payload:any;try{payload=JSON.parse(body);}catch{return json({error:'Invalid JSON'},400);}
   const events=Array.isArray(payload?.events)?payload.events:[];
-  if(events.length===0)return json({ok:true,verified:true,version:24});
-  if(!url||!serviceKey)return json({error:'Database configuration missing',version:24},503);
+  if(events.length===0)return json({ok:true,verified:true,version:25});
+  if(!url||!serviceKey)return json({error:'Database configuration missing',version:25},503);
   const db=createClient(url,serviceKey,{auth:{persistSession:false,autoRefreshToken:false}});
   let accepted=0,failed=0,surveyAccepted=0;
   for(const event of events){
@@ -550,8 +572,15 @@ Deno.serve(async(req)=>{
     const m=event.message;
     const groupId=event.source?.groupId?String(event.source.groupId):'';
     if(groupId===WORK_GROUP_ID&&m.type==='text'){
-      try{await handleWorkGroupText(db,event);accepted++;surveyAccepted++;}
-      catch(error){failed++;console.error('work text error',error);await replyText(event.replyToken,'⚠️ วิเคราะห์/จัดกลุ่มงานไม่สำเร็จ ระบบเก็บข้อความไว้ตรวจภายหลัง');}
+      try{
+        const handled=await handleWorkGroupText(db,event);
+        if(handled){accepted++;surveyAccepted++;continue;}
+      }catch(error){
+        failed++;console.error('work text error',error);
+        await replyText(event.replyToken,'⚠️ วิเคราะห์/จัดกลุ่มงานไม่สำเร็จ ระบบเก็บข้อความไว้ตรวจภายหลัง');
+        continue;
+      }
+      // Ordinary chat in the work group: do not create/update jobs and do not reply.
       continue;
     }
     if(groupId===WORK_GROUP_ID&&m.type==='image'){
@@ -572,6 +601,6 @@ Deno.serve(async(req)=>{
     if(m.type==='text')await linkContext(db,event,String(saved.id),text,draft);
     accepted++;
   }
-  if(failed>0)return json({ok:false,accepted,failed,surveyAccepted,version:24},500);
-  return json({ok:true,accepted,failed:0,surveyAccepted,version:24},200);
+  if(failed>0)return json({ok:false,accepted,failed,surveyAccepted,version:25},500);
+  return json({ok:true,accepted,failed:0,surveyAccepted,version:25},200);
 });
