@@ -200,15 +200,21 @@ function aiTextOf(p:any){
   return (p?.output||[]).flatMap((x:any)=>x.content||[]).map((x:any)=>x.text||'').join('');
 }
 
+function hasWorkObject(text:string){
+  return /ป้าย|แบบ(?:งาน)?|โลโก้|ขนาด|สี|วัสดุ|คอมโพสิต|ไวนิล|สติ๊กเกอร์|สติกเกอร์|ไฟ|LED|โครง|เหล็ก|ติดตั้ง|ผลิต|หน้างาน|ลูกค้า|ร้าน|โครงการ|สเป็ก|spec|เมตร|ตร\.ม|ซม\.|เซนติเมตร|ราคา|จำนวน|ด้านหน้า|ด้านหลัง|ซ้าย|ขวา|roll\s*up|โรลอัพ|facade|ฟาซาด/i.test(text||'');
+}
+
 function isRevisionText(text:string){
-  return /แก้|แก้ไข|ปรับ|ปรับแก้|เปลี่ยน|เพิ่ม|ลด|ย้าย|ขยับ|เปลี่ยนแบบ|แบบใหม่|เวอร์ชัน|revision|rev\.?/i.test(text||'');
+  const t=String(text||'').replace(/\s+/g,' ').trim();
+  const hasAction=/แก้ไข|แก้แบบ|ปรับแก้|ปรับแบบ|เปลี่ยน|เพิ่ม|ลด|ย้าย|ขยับ|แบบใหม่|เวอร์ชัน|revision|rev\.?/i.test(t);
+  return hasAction && hasWorkObject(t);
 }
 
 function isNonWorkChat(text:string){
   const t=String(text||'').replace(/\s+/g,' ').trim();
   if(!t)return true;
-  if(/^(โอเค|ok|ครับ|ค่ะ|คะ|ขอบคุณ|รับทราบ|ได้ครับ|ได้ค่ะ|อืม|อ่อ|555+|ฮ่า+)/i.test(t))return true;
-  if(/รายงาน.*ไม่มี|งานเยอะเกิน|ไม่ทำ|ไม่เอา|พักก่อน|เดี๋ยวค่อย|คุยเล่น|ทดสอบระบบ/i.test(t))return true;
+  if(/^(โอเค|ok|ครับ|ค่ะ|คะ|ขอบคุณ|รับทราบ|ได้ครับ|ได้ค่ะ|อืม|อ่อ|555+|ฮ่า+|ปิดเลย|ไปแล้ว|ไปมาแล้ว|ไม่ได้เปิดไว้)$/i.test(t))return true;
+  if(/รายงาน.*ไม่มี|งานเยอะเกิน|ไม่ทำ|ไม่เอา|พักก่อน|เดี๋ยวค่อย|คุยเล่น|ทดสอบระบบ|ไปเดินหรือยัง|ห้องทำงาน/i.test(t))return true;
   return false;
 }
 
@@ -216,9 +222,8 @@ function isLikelyWorkText(text:string){
   const t=String(text||'').replace(/\s+/g,' ').trim();
   if(isNonWorkChat(t))return false;
   if(isRevisionText(t))return true;
-  if(/#?(งาน|job|สำรวจ|survey|สรุปงาน|ปิดงาน)/i.test(t))return true;
-  if(/ป้าย|แบบ|โลโก้|ขนาด|สี|วัสดุ|คอมโพสิต|ไวนิล|สติ๊กเกอร์|สติกเกอร์|ไฟ|LED|โครง|เหล็ก|ติดตั้ง|ผลิต|หน้างาน|ลูกค้า|ร้าน|โครงการ|สเป็ก|spec|เมตร|ตร\.ม|ซม\.|เซนติเมตร|ราคา|จำนวน|ด้านหน้า|ด้านหลัง|ซ้าย|ขวา/i.test(t))return true;
-  return false;
+  if(/^#?(งาน|job|สำรวจ|survey|สรุปงาน|ปิดงาน)(?:\s|$)/i.test(t))return true;
+  return hasWorkObject(t);
 }
 
 async function recentWorkJobs(db:any){
@@ -275,7 +280,13 @@ async function saveWorkUpdate(db:any,event:any,surveyId:string,type:string,text:
 async function handleWorkGroupText(db:any,event:any){
   const text=String(event?.message?.text||'').trim();
   const groupId=String(event.source?.groupId||'');
+  const messageId=event?.message?.id?String(event.message.id):'';
   if(!text||!groupId)return false;
+
+  if(messageId){
+    const {data:seen}=await db.from('line_work_updates').select('id').eq('line_message_id',messageId).maybeSingle();
+    if(seen)return true;
+  }
 
   const current=await activeWorkContext(db,groupId);
   const jobs=await recentWorkJobs(db);
@@ -325,7 +336,9 @@ async function handleWorkGroupText(db:any,event:any){
     const prompt=`คุณเป็น AI จัดกลุ่มงานของบริษัททำป้ายจากข้อความ LINE
 เป้าหมาย: รวมข้อความที่พูดถึงลูกค้า/โครงการเดียวกันให้อยู่ "งานเดียว" และถ้าเป็นการแก้แบบ ปรับแบบ เปลี่ยนสเป็ก เพิ่ม/ลด/ย้าย ให้ถือเป็น revision ของงานเดิม ไม่สร้างงานใหม่
 สร้างงานใหม่เฉพาะเมื่อข้อความชัดเจนว่าเป็นคนละลูกค้า คนละสถานที่ หรือคนละโครงการ
-ถ้ายังไม่แน่ใจและมี current_job ให้เลือก current_job มากกว่าสร้างงานใหม่
+ข้อความคุยทั่วไป เช่น ไปไหนหรือยัง ห้องทำงาน เปิด/ปิดหรือยัง ค่ะ ครับ ไม่ทำ ไม่เอา ไม่ใช่คำสั่งงาน และห้ามจัดเป็น revision
+revision ต้องมีคำสั่งแก้/ปรับ/เปลี่ยน/เพิ่ม/ลด/ย้าย/ขยับ และกล่าวถึงองค์ประกอบงานจริง เช่น แบบ ป้าย สี โลโก้ ขนาด วัสดุ ติดตั้ง
+ถ้ายังไม่แน่ใจ ให้ถือว่าไม่ใช่งาน แทนที่จะเดาเข้ากับ current_job
 คืน JSON เท่านั้น
 
 current_job: ${JSON.stringify(currentJob?{id:currentJob.id,survey_no:currentJob.survey_no,customer_name:currentJob.customer_name,project_name:currentJob.project_name}:null)}
@@ -400,9 +413,9 @@ recent_jobs: ${JSON.stringify(compactJobs)}
 
   if(created){
     await replyText(event.replyToken,`🆕 สรุปเป็นงานใหม่แล้ว\n${job.survey_no} — ${job.customer_name||'-'}\n${job.project_name||'ไม่ระบุชื่องาน'}\nส่งรูปหรือรายละเอียดต่อได้เลย ระบบจะรวมไว้ในงานนี้`);
-  }else if(decision.is_revision){
+  }else if(decision.is_revision && /^#?(งาน|job)/i.test(text)){
     const {count}=await db.from('line_work_updates').select('id',{count:'exact',head:true}).eq('survey_id',job.id).eq('update_type','revision');
-    await replyText(event.replyToken,`✏️ วิเคราะห์เป็นงานแก้ไขของงานเดิม\n${job.survey_no} — ${job.customer_name||'-'}\n${job.project_name||'ไม่ระบุชื่องาน'}\nแก้ไขครั้งที่ ${count||1}`);
+    await replyText(event.replyToken,`✏️ รวมเป็นงานแก้ไขของงานเดิม\n${job.survey_no} — ${job.customer_name||'-'}\n${job.project_name||'ไม่ระบุชื่องาน'}\nแก้ไขครั้งที่ ${count||1}`);
   }
   return true;
 }
@@ -555,7 +568,7 @@ async function linkContext(db:any,event:any,rowId:string,text:string,draft:any){
 
 Deno.serve(async(req)=>{
   const secret=env('LINE_CHANNEL_SECRET'),serviceKey=env('SUPABASE_SERVICE_ROLE_KEY'),url=env('SUPABASE_URL');
-  if(req.method==='GET')return json({ok:true,version:25,batchMinutes:BATCH_MINUTES,dedupe:'sha256-per-survey',secretConfigured:!!secret,serviceRoleConfigured:!!serviceKey,urlConfigured:!!url,tokenConfigured:!!env('LINE_CHANNEL_ACCESS_TOKEN')});
+  if(req.method==='GET')return json({ok:true,version:26,batchMinutes:BATCH_MINUTES,dedupe:'sha256-per-survey',secretConfigured:!!secret,serviceRoleConfigured:!!serviceKey,urlConfigured:!!url,tokenConfigured:!!env('LINE_CHANNEL_ACCESS_TOKEN')});
   if(req.method!=='POST')return json({error:'Method not allowed'},405);
   if(!secret)return json({error:'LINE_CHANNEL_SECRET missing'},503);
   const body=await req.text(),signature=req.headers.get('x-line-signature')||'';
@@ -563,8 +576,8 @@ Deno.serve(async(req)=>{
   if(!(await validSignature(body,signature,secret)))return json({error:'Invalid signature'},401);
   let payload:any;try{payload=JSON.parse(body);}catch{return json({error:'Invalid JSON'},400);}
   const events=Array.isArray(payload?.events)?payload.events:[];
-  if(events.length===0)return json({ok:true,verified:true,version:25});
-  if(!url||!serviceKey)return json({error:'Database configuration missing',version:25},503);
+  if(events.length===0)return json({ok:true,verified:true,version:26});
+  if(!url||!serviceKey)return json({error:'Database configuration missing',version:26},503);
   const db=createClient(url,serviceKey,{auth:{persistSession:false,autoRefreshToken:false}});
   let accepted=0,failed=0,surveyAccepted=0;
   for(const event of events){
@@ -601,6 +614,6 @@ Deno.serve(async(req)=>{
     if(m.type==='text')await linkContext(db,event,String(saved.id),text,draft);
     accepted++;
   }
-  if(failed>0)return json({ok:false,accepted,failed,surveyAccepted,version:25},500);
-  return json({ok:true,accepted,failed:0,surveyAccepted,version:25},200);
+  if(failed>0)return json({ok:false,accepted,failed,surveyAccepted,version:26},500);
+  return json({ok:true,accepted,failed:0,surveyAccepted,version:26},200);
 });
