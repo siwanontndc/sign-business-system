@@ -101,10 +101,10 @@ export async function POST(request) {
 
     let auto_review = { status: "needs_review" };
     const canAutoApprove =
-      update.ai_confidence >= 0.93 &&
+      update.ai_confidence >= 0.90 &&
       ["income","expense"].includes(update.entry_type) &&
       Number(update.amount || 0) > 0 &&
-      update.suggested_transaction_date &&
+      (update.suggested_transaction_date || entry.event_at) &&
       String(update.suggested_reference_no || "").trim();
 
     if (canAutoApprove) {
@@ -115,7 +115,7 @@ export async function POST(request) {
         p_category: update.category || "อื่น ๆ",
         p_description: update.suggested_description || null,
         p_project_name: update.job_reference || null,
-        p_transaction_date: update.suggested_transaction_date,
+        p_transaction_date: update.suggested_transaction_date || entry.event_at,
         p_counterparty: update.suggested_counterparty || null,
         p_bank_name: update.suggested_bank_name || null,
         p_reference_no: update.suggested_reference_no || null,
