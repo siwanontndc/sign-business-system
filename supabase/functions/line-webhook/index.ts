@@ -149,6 +149,7 @@ async function saveSurveyImage(db:any,event:any,survey:any){
 
 async function handleWorkGroupImage(db:any,event:any){
   const picked=await chooseOrCreateSurvey(db,event);
+  await ensureWorkOrder(db,picked.survey,'รับรูปจาก LINE',false);
   const result=await saveSurveyImage(db,event,picked.survey);
 
   if(result.reason==='duplicate-message'||result.reason==='duplicate-hash'){
@@ -308,8 +309,9 @@ async function handleWorkGroupText(db:any,event:any){
       note:(existingNote?existingNote+'\n':'')+line,
       updated_at:new Date().toISOString()
     }).eq('id',currentJob.id);
+    const wo=await ensureWorkOrder(db,currentJob,summary,true);
     const {count}=await db.from('line_work_updates').select('id',{count:'exact',head:true}).eq('survey_id',currentJob.id).eq('update_type','revision');
-    await replyText(event.replyToken,`✏️ รวมเป็นงานเดิมแล้ว\n${currentJob.survey_no} — ${currentJob.customer_name||'-'}\n${currentJob.project_name||'ไม่ระบุชื่องาน'}\nแก้ไขครั้งที่ ${count||1}`);
+    await replyText(event.replyToken,`✏️ รวมเป็นใบงานเดิมแล้ว\n${wo.work_no} — ${currentJob.customer_name||'-'}\n${currentJob.project_name||'ไม่ระบุชื่องาน'}\nแก้ไขครั้งที่ ${count||1}`);
     return true;
   }
 
@@ -410,14 +412,52 @@ recent_jobs: ${JSON.stringify(compactJobs)}
   await setWorkContext(db,event,job.id);
   const updateType=created?'new_job':decision.is_revision?'revision':'update';
   await saveWorkUpdate(db,event,job.id,updateType,text,String(decision.summary||text).slice(0,700),Number(decision.confidence)||0);
+  const wo=await ensureWorkOrder(db,job,String(decision.summary||text).slice(0,700),!created&&decision.is_revision);
 
   if(created){
-    await replyText(event.replyToken,`🆕 สรุปเป็นงานใหม่แล้ว\n${job.survey_no} — ${job.customer_name||'-'}\n${job.project_name||'ไม่ระบุชื่องาน'}\nส่งรูปหรือรายละเอียดต่อได้เลย ระบบจะรวมไว้ในงานนี้`);
+    await replyText(event.replyToken,`🆕 สร้างใบงานอัตโนมัติแล้ว\n${wo.work_no} — ${job.customer_name||'-'}\n${job.project_name||'ไม่ระบุชื่องาน'}\nส่งรูปหรือรายละเอียดต่อได้เลย ระบบจะรวมไว้ในใบงานนี้`);
   }else if(decision.is_revision && /^#?(งาน|job)/i.test(text)){
     const {count}=await db.from('line_work_updates').select('id',{count:'exact',head:true}).eq('survey_id',job.id).eq('update_type','revision');
     await replyText(event.replyToken,`✏️ รวมเป็นงานแก้ไขของงานเดิม\n${job.survey_no} — ${job.customer_name||'-'}\n${job.project_name||'ไม่ระบุชื่องาน'}\nแก้ไขครั้งที่ ${count||1}`);
   }
   return true;
+}
+
+
+function makeWorkNo(){
+  const d=new Date();
+  const yy=String(d.getFullYear()).slice(-2);
+  const mm=String(d.getMonth()+1).padStart(2,'0');
+  return `WO-${yy}${mm}-${String(Date.now()).slice(-6)}`;
+}
+
+async function ensureWorkOrder(db:any,survey:any,summary:string='',isRevision=false){
+  const {data:existing,error:ee}=await db.from('line_work_orders').select('*').eq('survey_id',survey.id).maybeSingle();
+  if(ee)throw ee;
+  if(existing){
+    const patch:any={
+      customer_name:survey.customer_name||existing.customer_name,
+      project_name:survey.project_name||existing.project_name,
+      summary:summary||existing.summary,
+      updated_at:new Date().toISOString()
+    };
+    if(isRevision)patch.revision_count=Number(existing.revision_count||0)+1;
+    const {data,error}=await db.from('line_work_orders').update(patch).eq('id',existing.id).select().single();
+    if(error)throw error;
+    return data;
+  }
+  const {data,error}=await db.from('line_work_orders').insert({
+    work_no:makeWorkNo(),
+    survey_id:survey.id,
+    customer_name:survey.customer_name||'รอระบุลูกค้า (LINE)',
+    project_name:survey.project_name||'งานจาก LINE',
+    summary:summary||survey.note||null,
+    revision_count:isRevision?1:0,
+    status:'open',
+    source:'line'
+  }).select().single();
+  if(error)throw error;
+  return data;
 }
 
 function financeHint(text:string){
@@ -498,7 +538,9 @@ counterparty คืออีกฝั่งของรายการ
   let category=h.category||String(parsed.category||'').trim();
   const allowed=direction==='income'?allowedIncome:direction==='expense'?allowedExpense:[];
   if(!allowed.includes(category))category=direction==='income'?'รายได้งานป้าย':direction==='expense'?'อื่น ๆ':'อื่น ๆ';
-  const date=parsed.transaction_date&&Number.isFinite(Date.parse(parsed.transaction_date))?new Date(parsed.transaction_date).toISOString():null;
+  const date=parsed.transaction_date&&Number.isFinite(Date.parse(parsed.transaction_date))
+    ?new Date(parsed.transaction_date).toISOString()
+    :(e.event_at?new Date(e.event_at).toISOString():null);
   const confidence=Math.max(0,Math.min(1,Number(parsed.confidence)||0));
 
   const update={
@@ -519,7 +561,7 @@ counterparty คืออีกฝั่งของรายการ
 
   let autoStatus='needs_review';
   const canAutoApprove=
-    confidence>=0.93 &&
+    confidence>=0.90 &&
     direction &&
     Number.isFinite(amount) && amount>0 &&
     date &&
@@ -568,7 +610,7 @@ async function linkContext(db:any,event:any,rowId:string,text:string,draft:any){
 
 Deno.serve(async(req)=>{
   const secret=env('LINE_CHANNEL_SECRET'),serviceKey=env('SUPABASE_SERVICE_ROLE_KEY'),url=env('SUPABASE_URL');
-  if(req.method==='GET')return json({ok:true,version:26,batchMinutes:BATCH_MINUTES,dedupe:'sha256-per-survey',secretConfigured:!!secret,serviceRoleConfigured:!!serviceKey,urlConfigured:!!url,tokenConfigured:!!env('LINE_CHANNEL_ACCESS_TOKEN')});
+  if(req.method==='GET')return json({ok:true,version:27,batchMinutes:BATCH_MINUTES,dedupe:'sha256-per-survey',secretConfigured:!!secret,serviceRoleConfigured:!!serviceKey,urlConfigured:!!url,tokenConfigured:!!env('LINE_CHANNEL_ACCESS_TOKEN')});
   if(req.method!=='POST')return json({error:'Method not allowed'},405);
   if(!secret)return json({error:'LINE_CHANNEL_SECRET missing'},503);
   const body=await req.text(),signature=req.headers.get('x-line-signature')||'';
@@ -576,8 +618,8 @@ Deno.serve(async(req)=>{
   if(!(await validSignature(body,signature,secret)))return json({error:'Invalid signature'},401);
   let payload:any;try{payload=JSON.parse(body);}catch{return json({error:'Invalid JSON'},400);}
   const events=Array.isArray(payload?.events)?payload.events:[];
-  if(events.length===0)return json({ok:true,verified:true,version:26});
-  if(!url||!serviceKey)return json({error:'Database configuration missing',version:26},503);
+  if(events.length===0)return json({ok:true,verified:true,version:27});
+  if(!url||!serviceKey)return json({error:'Database configuration missing',version:27},503);
   const db=createClient(url,serviceKey,{auth:{persistSession:false,autoRefreshToken:false}});
   let accepted=0,failed=0,surveyAccepted=0;
   for(const event of events){
@@ -614,6 +656,6 @@ Deno.serve(async(req)=>{
     if(m.type==='text')await linkContext(db,event,String(saved.id),text,draft);
     accepted++;
   }
-  if(failed>0)return json({ok:false,accepted,failed,surveyAccepted,version:26},500);
-  return json({ok:true,accepted,failed:0,surveyAccepted,version:26},200);
+  if(failed>0)return json({ok:false,accepted,failed,surveyAccepted,version:27},500);
+  return json({ok:true,accepted,failed:0,surveyAccepted,version:27},200);
 });
