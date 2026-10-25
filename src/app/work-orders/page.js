@@ -66,7 +66,7 @@ export default function WorkOrdersPage(){
               </div>
               <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
                 {edit?<><button onClick={()=>save(row)} style={green}>บันทึก</button><button onClick={()=>setEditing(null)} style={neutral}>ยกเลิกแก้ไข</button></>:<>
-                  <button onClick={()=>router.push(`/surveys/${row.survey_id}`)} style={blue}>เปิดงาน</button>
+                  <button onClick={()=>router.push(`/work-orders/${row.id}`)} style={blue}>เปิดงาน</button>
                   <button onClick={()=>{setEditing(row.id);setDraft({customer_name:row.customer_name||"",project_name:row.project_name||"",summary:row.summary||""})}} style={neutral}>แก้ไข</button>
                   {row.status==="cancelled"?<button onClick={()=>restore(row)} style={green}>เปิดอีกครั้ง</button>:<button onClick={()=>cancel(row)} style={red}>ยกเลิกงาน</button>}
                 </>}
