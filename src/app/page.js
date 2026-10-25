@@ -29,7 +29,7 @@ if(roleLoading)return <div style={{minHeight:"100vh",display:"grid",placeItems:"
     <div style={{background:"#f8fafc",borderRadius:12,padding:13}}><div style={{fontSize:12,color:"#475569",fontWeight:800}}>อัปเดตทั้งหมด</div><div style={{fontSize:26,fontWeight:900,color:"#334155"}}>{lineUpdates.length}</div></div>
   </div>
   {latestLineJobs.length>0&&<div style={{display:"grid",gap:8,marginTop:14}}>
-    {latestLineJobs.map(j=><div key={j.id} onClick={()=>router.push(`/surveys/${j.survey_id}`)} style={{display:"flex",justifyContent:"space-between",gap:10,alignItems:"center",width:"100%",border:"1px solid #e5e7eb",background:"#fff",borderRadius:10,padding:"10px 12px",textAlign:"left",cursor:"pointer"}}>
+    {latestLineJobs.map(j=><div key={j.id} onClick={()=>router.push(`/work-orders/${j.id}`)} style={{display:"flex",justifyContent:"space-between",gap:10,alignItems:"center",width:"100%",border:"1px solid #e5e7eb",background:"#fff",borderRadius:10,padding:"10px 12px",textAlign:"left",cursor:"pointer"}}>
       <span style={{minWidth:0}}><b style={{color:"#be185d"}}>{j.work_no}</b> <b>{j.customer_name||"รอระบุลูกค้า"}</b><span style={{color:"#6b7280"}}> — {j.project_name||"ยังไม่ระบุชื่องาน"}</span></span>
       <span style={{display:"flex",gap:7,alignItems:"center",flexShrink:0}}>
         <button type="button" onClick={e=>{e.stopPropagation();router.push(`/surveys/${j.survey_id}`)}} style={{border:0,borderRadius:8,padding:"7px 9px",background:"#dbeafe",color:"#1d4ed8",fontWeight:900,cursor:"pointer"}}>เปิดงาน</button>
