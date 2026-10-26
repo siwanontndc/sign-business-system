@@ -153,13 +153,11 @@ async function handleWorkGroupImage(db:any,event:any){
   const result=await saveSurveyImage(db,event,picked.survey);
 
   if(result.reason==='duplicate-message'||result.reason==='duplicate-hash'){
-    await replyText(event.replyToken,`ℹ️ รูปนี้มีอยู่แล้วใน ${picked.survey.survey_no}\nจึงไม่บันทึกซ้ำ`);
+    // Duplicate images are skipped silently to keep the LINE work group clean.
     return true;
   }
 
-  if(picked.created){
-    await replyText(event.replyToken,`✅ เริ่มงานใหม่แล้ว\n${picked.survey.survey_no}\nระบบจะรวบรวมข้อความ รูป และงานแก้ไขที่เกี่ยวข้องไว้ในงานเดียวกัน`);
-  }
+  // New work orders are created silently; users can review them from the dashboard.
   return true;
 }
 
@@ -414,12 +412,7 @@ recent_jobs: ${JSON.stringify(compactJobs)}
   await saveWorkUpdate(db,event,job.id,updateType,text,String(decision.summary||text).slice(0,700),Number(decision.confidence)||0);
   const wo=await ensureWorkOrder(db,job,String(decision.summary||text).slice(0,700),!created&&decision.is_revision);
 
-  if(created){
-    await replyText(event.replyToken,`🆕 สร้างใบงานอัตโนมัติแล้ว\n${wo.work_no} — ${job.customer_name||'-'}\n${job.project_name||'ไม่ระบุชื่องาน'}\nส่งรูปหรือรายละเอียดต่อได้เลย ระบบจะรวมไว้ในใบงานนี้`);
-  }else if(decision.is_revision && /^#?(งาน|job)/i.test(text)){
-    const {count}=await db.from('line_work_updates').select('id',{count:'exact',head:true}).eq('survey_id',job.id).eq('update_type','revision');
-    await replyText(event.replyToken,`✏️ รวมเป็นงานแก้ไขของงานเดิม\n${job.survey_no} — ${job.customer_name||'-'}\n${job.project_name||'ไม่ระบุชื่องาน'}\nแก้ไขครั้งที่ ${count||1}`);
-  }
+  // Work creation and revisions are recorded silently to avoid cluttering the LINE group.
   return true;
 }
 
@@ -610,7 +603,7 @@ async function linkContext(db:any,event:any,rowId:string,text:string,draft:any){
 
 Deno.serve(async(req)=>{
   const secret=env('LINE_CHANNEL_SECRET'),serviceKey=env('SUPABASE_SERVICE_ROLE_KEY'),url=env('SUPABASE_URL');
-  if(req.method==='GET')return json({ok:true,version:27,batchMinutes:BATCH_MINUTES,dedupe:'sha256-per-survey',secretConfigured:!!secret,serviceRoleConfigured:!!serviceKey,urlConfigured:!!url,tokenConfigured:!!env('LINE_CHANNEL_ACCESS_TOKEN')});
+  if(req.method==='GET')return json({ok:true,version:28,batchMinutes:BATCH_MINUTES,dedupe:'sha256-per-survey',secretConfigured:!!secret,serviceRoleConfigured:!!serviceKey,urlConfigured:!!url,tokenConfigured:!!env('LINE_CHANNEL_ACCESS_TOKEN')});
   if(req.method!=='POST')return json({error:'Method not allowed'},405);
   if(!secret)return json({error:'LINE_CHANNEL_SECRET missing'},503);
   const body=await req.text(),signature=req.headers.get('x-line-signature')||'';
@@ -618,8 +611,8 @@ Deno.serve(async(req)=>{
   if(!(await validSignature(body,signature,secret)))return json({error:'Invalid signature'},401);
   let payload:any;try{payload=JSON.parse(body);}catch{return json({error:'Invalid JSON'},400);}
   const events=Array.isArray(payload?.events)?payload.events:[];
-  if(events.length===0)return json({ok:true,verified:true,version:27});
-  if(!url||!serviceKey)return json({error:'Database configuration missing',version:27},503);
+  if(events.length===0)return json({ok:true,verified:true,version:28});
+  if(!url||!serviceKey)return json({error:'Database configuration missing',version:28},503);
   const db=createClient(url,serviceKey,{auth:{persistSession:false,autoRefreshToken:false}});
   let accepted=0,failed=0,surveyAccepted=0;
   for(const event of events){
@@ -632,7 +625,6 @@ Deno.serve(async(req)=>{
         if(handled){accepted++;surveyAccepted++;continue;}
       }catch(error){
         failed++;console.error('work text error',error);
-        await replyText(event.replyToken,'⚠️ วิเคราะห์/จัดกลุ่มงานไม่สำเร็จ ระบบเก็บข้อความไว้ตรวจภายหลัง');
         continue;
       }
       // Ordinary chat in the work group: do not create/update jobs and do not reply.
@@ -640,7 +632,7 @@ Deno.serve(async(req)=>{
     }
     if(groupId===WORK_GROUP_ID&&m.type==='image'){
       try{await handleWorkGroupImage(db,event);accepted++;surveyAccepted++;}
-      catch(error){failed++;console.error('survey image error',error);await replyText(event.replyToken,'⚠️ รับรูปงานไม่สำเร็จ ระบบแจ้งข้อผิดพลาดแล้ว');}
+      catch(error){failed++;console.error('survey image error',error);}
       continue;
     }
     const eventId=String(event.webhookEventId||m.id||'');if(!eventId)continue;
@@ -656,6 +648,6 @@ Deno.serve(async(req)=>{
     if(m.type==='text')await linkContext(db,event,String(saved.id),text,draft);
     accepted++;
   }
-  if(failed>0)return json({ok:false,accepted,failed,surveyAccepted,version:27},500);
-  return json({ok:true,accepted,failed:0,surveyAccepted,version:27},200);
+  if(failed>0)return json({ok:false,accepted,failed,surveyAccepted,version:28},500);
+  return json({ok:true,accepted,failed:0,surveyAccepted,version:28},200);
 });
